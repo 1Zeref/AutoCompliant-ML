@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Vietnam Motorbike Smart Traffic Assistant</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#111827">
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col">
+
+  <!-- HEADER & NAVIGATION BAR -->
+  <header class="bg-gray-900 border-b border-gray-800 sticky top-0 z-50 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-xl shadow-lg">
+          🏍️
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            <span data-i18n="app_title">Trợ Lý Giao Thông Xe Máy</span>
+            <span class="text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded-full font-mono">v1.0</span>
+          </h1>
+          <p class="text-xs text-gray-400" data-i18n="app_subtitle">Chỉ đường an toàn & Cảnh báo rảnh tay bằng giọng nói</p>
+        </div>
+      </div>
+
+      <!-- Action Group: Language Switcher & Training Link -->
+      <div class="flex items-center space-x-3">
+        <!-- Language Switcher (EN | VI) -->
+        <div class="inline-flex rounded-lg bg-gray-800 p-1 border border-gray-700">
+          <button id="btn-lang-vi" class="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors bg-blue-600 text-white">
+            VI
+          </button>
+          <button id="btn-lang-en" class="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors text-gray-400 hover:text-white">
+            EN
+          </button>
+        </div>
+
+        <!-- Dedicated Training Link -->
+        <a href="/training.html" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700 rounded-lg transition-colors">
+          <span>🧠</span>
+          <span data-i18n="nav_training">Quản Trị AI</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- TABS BAR -->
+    <div class="max-w-7xl mx-auto px-4 flex border-t border-gray-800 space-x-6 text-sm">
+      <button id="tab-btn-map" class="py-2.5 border-b-2 border-blue-500 text-blue-400 font-medium flex items-center gap-1.5">
+        <span>🗺️</span> <span data-i18n="nav_map">Bản Đồ & Lộ Trình</span>
+      </button>
+      <button id="tab-btn-hud" class="py-2.5 border-b-2 border-transparent text-gray-400 hover:text-gray-200 font-medium flex items-center gap-1.5">
+        <span>⚡</span> <span data-i18n="nav_hud">Chế Độ Lái HUD</span>
+      </button>
+      <button id="tab-btn-hazards" class="py-2.5 border-b-2 border-transparent text-gray-400 hover:text-gray-200 font-medium flex items-center gap-1.5">
+        <span>🚨</span> <span data-i18n="nav_hazards">Điểm Cảnh Báo</span>
+      </button>
+      <a href="/training.html" class="sm:hidden py-2.5 border-b-2 border-transparent text-purple-400 font-medium flex items-center gap-1.5">
+        <span>🧠</span> <span data-i18n="nav_training">Quản Trị AI</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- MAIN VIEW CONTAINER -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 space-y-4">
+
+    <!-- VOICE ASSISTANT BAR (ALWAYS VISIBLE & ACCESSIBLE) -->
+    <section class="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-4 w-full sm:w-auto">
+        <!-- Giant Micro Button -->
+        <button id="btn-mic" class="w-16 h-16 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center text-2xl shadow-lg transition-transform active:scale-95 flex-shrink-0">
+          🎤
+        </button>
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <span id="voice-indicator" class="w-2.5 h-2.5 rounded-full bg-gray-500"></span>
+            <span id="voice-status" class="text-sm font-semibold text-gray-300" data-i18n="voice_mic_btn">Nhấn để Nói (Rảnh tay)</span>
+          </div>
+          <p id="voice-transcript" class="text-sm text-blue-300 font-mono mt-0.5 truncate max-w-xs sm:max-w-md italic">
+            Chưa có lệnh thoại...
+          </p>
+          <p class="text-xs text-gray-500 mt-0.5" data-i18n="voice_sample_hint">
+            Ví dụ: "Chỉ đường tới Chợ Bến Thành tránh ngập" hoặc "Phía trước có camera không?"
+          </p>
+        </div>
+      </div>
+
+      <!-- Quick Simulated Voice Command Chips -->
+      <div class="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
+        <button class="voice-chip px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs rounded-full border border-gray-700 text-gray-300" data-text="Chỉ đường tới Chợ Bến Thành tránh ngập">
+          📍 Tới Bến Thành
+        </button>
+        <button class="voice-chip px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs rounded-full border border-gray-700 text-gray-300" data-text="Phía trước có camera phạt nguội không?">
+          📷 Quét Camera
+        </button>
+        <button class="voice-chip px-3 py-1 bg-gray-800 hover:bg-gray-700 text-xs rounded-full border border-gray-700 text-gray-300" data-text="Đoạn này có ngập nước không?">
+          🌊 Kiểm tra Ngập
+        </button>
+      </div>
+    </section>
+
+    <!-- LIVE AUDIO & NOTIFICATION BANNER -->
+    <div id="live-alert-banner" class="hidden rounded-xl p-3.5 flex items-center justify-between text-sm shadow-md transition-all">
+      <div class="flex items-center gap-3">
+        <span id="alert-banner-icon" class="text-2xl">🚨</span>
+        <div>
+          <h4 id="alert-banner-title" class="font-bold text-white">CẢNH BÁO AN TOÀN</h4>
+          <p id="alert-banner-desc" class="text-gray-200 text-xs mt-0.5"></p>
+        </div>
+      </div>
+      <button id="btn-replay-speech" class="px-3 py-1.5 bg-black/30 hover:bg-black/50 text-white text-xs rounded-lg flex items-center gap-1">
+        🔊 <span>Nghe Lại</span>
+      </button>
+    </div>
+
+    <!-- TAB 1: MAP & NAVIGATION -->
+    <div id="tab-content-map" class="space-y-4">
+      <!-- Search & Route Input Form -->
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-md grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1" data-i18n="start_location">Vị trí xuất phát</label>
+          <input id="input-start" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" value="Hàng Xanh (10.8018, 106.7115)">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1" data-i18n="destination">Điểm đến</label>
+          <input id="input-end" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" value="Chợ Bến Thành (10.7725, 106.6980)">
+        </div>
+        <div class="flex flex-col justify-end">
+          <label class="flex items-center gap-2 cursor-pointer text-xs text-gray-300 mb-2">
+            <input id="cb-avoid-floods" type="checkbox" checked class="rounded bg-gray-800 border-gray-700 text-blue-600 focus:ring-0">
+            <span data-i18n="opt_avoid_floods">Tự động né điểm ngập</span>
+          </label>
+          <button id="btn-calc-route" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors flex items-center justify-center gap-2">
+            <span>🚀</span> <span data-i18n="btn_route">Tìm Lộ Trình Xe Máy</span>
+          </button>
+        </div>
+        <div class="flex flex-col justify-end">
+          <button id="btn-toggle-sim" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-medium py-2 px-4 rounded-lg text-sm transition-colors flex items-center justify-center gap-2">
+            <span>🛵</span> <span id="sim-btn-text" data-i18n="btn_simulate_movement">Mô Phỏng Chạy Xe</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Interactive Map & Side Route Info -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <!-- Leaflet Map Container -->
+        <div class="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-2xl p-2 relative shadow-lg">
+          <div id="map"></div>
+          <!-- Legend Overlay -->
+          <div class="absolute bottom-4 left-4 z-[400] bg-gray-900/90 backdrop-blur-sm border border-gray-800 rounded-lg p-2.5 text-xs space-y-1 shadow-md">
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> <span>Camera Phạt Nguội</span></div>
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span> <span>Điểm Ngập Nước</span></div>
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span> <span>Giới Hạn Tốc Độ</span></div>
+            <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span> <span>Vị Trí Của Bạn (Xe máy)</span></div>
+          </div>
+        </div>
+
+        <!-- Route Details & Nearby Alerts -->
+        <div class="space-y-4">
+          <!-- Route Summary Card -->
+          <div id="route-summary-card" class="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-md">
+            <h3 class="text-sm font-bold text-gray-200 flex items-center gap-2 mb-2">
+              <span>📋</span> <span>Thông Tin Tuyến Đường</span>
+            </h3>
+            <p id="route-summary-desc" class="text-xs text-gray-400">
+              Nhấn "Tìm Lộ Trình Xe Máy" hoặc dùng giọng nói để hiển thị chi tiết khoảng cách và các điểm nguy hiểm cần tránh.
+            </p>
+            <div id="route-stats" class="hidden grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-gray-800 text-center">
+              <div class="bg-gray-800/60 p-2 rounded-lg">
+                <span class="text-xs text-gray-400">Khoảng cách</span>
+                <p id="stat-dist" class="text-lg font-bold text-blue-400">0 km</p>
+              </div>
+              <div class="bg-gray-800/60 p-2 rounded-lg">
+                <span class="text-xs text-gray-400">Thời gian đi</span>
+                <p id="stat-time" class="text-lg font-bold text-emerald-400">0 phút</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Alerts in Area -->
+          <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-md flex-1">
+            <h3 class="text-sm font-bold text-gray-200 flex items-center justify-between mb-3">
+              <span class="flex items-center gap-2">
+                <span>⚠️</span> <span data-i18n="active_alerts_title">Cảnh Báo Gần Bạn</span>
+              </span>
+              <span id="badge-alert-count" class="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full font-mono">0 điểm</span>
+            </h3>
+            <div id="alerts-list" class="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+              <p class="text-xs text-gray-500 italic text-center py-4" data-i18n="no_alerts_nearby">
+                Vùng an toàn. Không có camera phạt nguội hay điểm ngập trong 300m.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: MOTORBIKE HUD MODE (HIGH-CONTRAST FOR RIDERS) -->
+    <div id="tab-content-hud" class="hidden space-y-4">
+      <div class="bg-black border-2 border-gray-800 rounded-3xl p-6 text-center shadow-2xl relative overflow-hidden">
+        <!-- Safety Badge -->
+        <div class="inline-block px-4 py-1.5 rounded-full text-xs font-black tracking-widest uppercase mb-4" id="hud-safety-pill">
+          <span id="hud-safety-text" data-i18n="hud_status_safe">AN TOÀN</span>
+        </div>
+
+        <!-- Giant Speedometer -->
+        <div class="my-4">
+          <span class="text-xs text-gray-500 font-bold uppercase tracking-wider" data-i18n="hud_speed">TỐC ĐỘ</span>
+          <div class="text-7xl sm:text-8xl font-black text-white tracking-tighter" id="hud-speed-val">
+            38
+          </div>
+          <span class="text-sm font-mono text-gray-400">KM/H</span>
+        </div>
+
+        <!-- Main HUD Notice Card -->
+        <div id="hud-notice-box" class="bg-gray-900/90 border border-gray-700 rounded-2xl p-4 max-w-xl mx-auto my-4 text-left">
+          <div class="flex items-center gap-3">
+            <span id="hud-notice-icon" class="text-3xl">🛡️</span>
+            <div>
+              <h3 id="hud-notice-title" class="text-base font-bold text-emerald-400">LÀN ĐƯỜNG AN TOÀN</h3>
+              <p id="hud-notice-desc" class="text-xs text-gray-300 mt-0.5">Không phát hiện camera phạt nguội hay điểm ngập trong phạm vi 300m.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Giant One-Tap Thumb Buttons (Motorbike Glove Friendly) -->
+        <div class="grid grid-cols-3 gap-3 max-w-xl mx-auto mt-6">
+          <button id="hud-btn-camera" class="bg-red-950/80 hover:bg-red-900 border-2 border-red-700 text-red-200 py-4 px-2 rounded-2xl flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform">
+            <span class="text-2xl">📷</span>
+            <span class="text-xs font-bold" data-i18n="hud_one_tap_camera">Quét Camera</span>
+          </button>
+          <button id="hud-btn-flood" class="bg-blue-950/80 hover:bg-blue-900 border-2 border-blue-700 text-blue-200 py-4 px-2 rounded-2xl flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform">
+            <span class="text-2xl">🌊</span>
+            <span class="text-xs font-bold" data-i18n="hud_one_tap_flood">Xem Ngập</span>
+          </button>
+          <button id="hud-btn-report" class="bg-amber-950/80 hover:bg-amber-900 border-2 border-amber-700 text-amber-200 py-4 px-2 rounded-2xl flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform">
+            <span class="text-2xl">⚠️</span>
+            <span class="text-xs font-bold" data-i18n="hud_one_tap_report">Báo Kẹt Xe</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: HAZARDS DATABASE -->
+    <div id="tab-content-hazards" class="hidden space-y-4">
+      <div class="bg-gray-900 border border-gray-800 rounded-2xl p-4 shadow-md">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+          <h2 class="text-base font-bold text-white flex items-center gap-2">
+            <span>🚨</span> <span>Danh Sách Điểm Đen Cảnh Báo Giao Thông</span>
+          </h2>
+          <!-- Filter Controls -->
+          <div class="flex gap-2">
+            <select id="filter-hazard-type" class="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none">
+              <option value="all">Tất cả loại điểm</option>
+              <option value="speed_camera">Camera Phạt Nguội</option>
+              <option value="flood_point">Điểm Ngập Nước</option>
+              <option value="speed_limit">Giới Hạn Tốc Độ</option>
+              <option value="traffic_jam">Điểm Ùn Tắc</option>
+            </select>
+            <select id="filter-hazard-city" class="bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none">
+              <option value="">Tất cả thành phố</option>
+              <option value="Ho_Chi_Minh">TP. Hồ Chí Minh</option>
+              <option value="Ha_Noi">Hà Nội</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="hazards-table-container" class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-gray-300">
+            <thead class="bg-gray-800 text-gray-400 uppercase text-[10px] tracking-wider">
+              <tr>
+                <th class="px-4 py-3">Loại</th>
+                <th class="px-4 py-3">Tên Điểm Cảnh Báo</th>
+                <th class="px-4 py-3">Tọa Độ</th>
+                <th class="px-4 py-3">Bán Kính</th>
+                <th class="px-4 py-3">Tốc Độ Max</th>
+                <th class="px-4 py-3">Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody id="hazards-table-body" class="divide-y divide-gray-800">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="bg-gray-900 border-t border-gray-800 py-3 text-center text-xs text-gray-500">
+    <p>Vietnam Motorbike Smart Traffic Assistant &bull; Agile Closed-Loop Dev &bull; Docker-First &bull; Bilingual EN/VI</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
