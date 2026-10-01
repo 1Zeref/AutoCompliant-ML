@@ -1,0 +1,308 @@
+openapi: 3.0.3
+info:
+  title: Vietnam Motorbike Smart Traffic Assistant API
+  description: API Backend cho hệ thống trợ lý điều hướng và cảnh báo an toàn rảnh tay cho người đi xe máy.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000
+    description: Local Development Server
+
+paths:
+  /api/v1/health:
+    get:
+      summary: Health Check Endpoint
+      description: Endpoint kiểm tra trạng thái hoạt động của hệ thống phục vụ Docker Readiness & Deployment.
+      responses:
+        '200':
+          description: Hệ thống hoạt động bình thường
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: 1.0.0
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/v1/hazards:
+    get:
+      summary: Lấy danh sách điểm cảnh báo giao thông
+      description: Trả về danh sách điểm camera phạt nguội, điểm ngập nước, giới hạn tốc độ và điểm ùn tắc.
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, speed_camera, flood_point, speed_limit, traffic_jam]
+          description: Lọc theo loại cảnh báo
+      responses:
+        '200':
+          description: Danh sách điểm cảnh báo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  hazards:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Hazard'
+
+  /api/v1/hazards/check-proximity:
+    post:
+      summary: Kiểm tra các điểm cảnh báo xung quanh vị trí người dùng
+      description: Nhận tọa độ GPS hiện tại của người đi xe máy và trả về các cảnh báo trong bán kính an toàn.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - latitude
+                - longitude
+              properties:
+                latitude:
+                  type: number
+                  format: float
+                  example: 10.8018
+                longitude:
+                  type: number
+                  format: float
+                  example: 106.7115
+                radius_meters:
+                  type: number
+                  default: 300
+                  example: 300
+                speed_kmh:
+                  type: number
+                  default: 40
+                  example: 45
+      responses:
+        '200':
+          description: Kết quả kiểm tra vùng an toàn
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  has_alert:
+                    type: boolean
+                  active_alerts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProximityAlert'
+
+  /api/v1/routes/directions:
+    post:
+      summary: Tính toán lộ trình xe máy và phát hiện cảnh báo trên tuyến
+      description: Định tuyến từ điểm xuất phát tới đích đến, tự động phát hiện các điểm ngập nước/camera trên đường.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - start_lat
+                - start_lon
+                - end_lat
+                - end_lon
+              properties:
+                start_lat:
+                  type: number
+                  format: float
+                  example: 10.7769
+                start_lon:
+                  type: number
+                  format: float
+                  example: 106.7009
+                end_lat:
+                  type: number
+                  format: float
+                  example: 10.8018
+                end_lon:
+                  type: number
+                  format: float
+                  example: 106.7115
+                avoid_floods:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Chi tiết lộ trình xe máy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteResult'
+
+  /api/v1/voice/parse:
+    post:
+      summary: Phân loại ý định từ câu nói của người đi xe máy
+      description: Nhận văn bản giọng nói tiếng Việt và phân loại thành Action/Intent kèm thực thể (destination, radius).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - text
+              properties:
+                text:
+                  type: string
+                  example: "Chỉ đường tới Chợ Bến Thành tránh ngập nước"
+      responses:
+        '200':
+          description: Kết quả phân tích Intent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  intent:
+                    type: string
+                    example: "NAVIGATE"
+                  confidence:
+                    type: number
+                    format: float
+                    example: 0.96
+                  entities:
+                    type: object
+                    properties:
+                      destination:
+                        type: string
+                        example: "Chợ Bến Thành"
+                      avoid_floods:
+                        type: boolean
+                        example: true
+                  voice_response:
+                    type: string
+                    example: "Đang tìm lộ trình xe máy đến Chợ Bến Thành, tự động tránh các điểm ngập nước."
+
+  /api/v1/training/status:
+    get:
+      summary: Trạng thái mô hình và dữ liệu huấn luyện
+      description: Lấy thông tin phiên bản mô hình hiện tại, độ chính xác, số lượng mẫu câu huấn luyện.
+      responses:
+        '200':
+          description: Trạng thái huấn luyện
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingStatus'
+
+  /api/v1/training/train:
+    post:
+      summary: Kích hoạt tiến trình huấn luyện / fine-tune mô hình Intent
+      description: Chạy tiến trình nền độc lập huấn luyện mô hình phân loại với các siêu tham số tùy chỉnh.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model_architecture:
+                  type: string
+                  enum: [tfidf_classifier, peft_lora_light, rule_augmented_fast]
+                  default: tfidf_classifier
+                epochs:
+                  type: integer
+                  default: 10
+                learning_rate:
+                  type: number
+                  default: 0.001
+                batch_size:
+                  type: integer
+                  default: 16
+      responses:
+        '202':
+          description: Đã tiếp nhận yêu cầu huấn luyện thành công
+
+components:
+  schemas:
+    Hazard:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [speed_camera, flood_point, speed_limit, traffic_jam]
+        title:
+          type: string
+        description:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        radius_meters:
+          type: number
+        severity:
+          type: string
+          enum: [info, warning, danger]
+        speed_limit:
+          type: integer
+          nullable: true
+
+    ProximityAlert:
+      type: object
+      properties:
+        hazard_id:
+          type: string
+        title:
+          type: string
+        distance_meters:
+          type: number
+        severity:
+          type: string
+        speech_announcement:
+          type: string
+
+    RouteResult:
+      type: object
+      properties:
+        distance_km:
+          type: number
+        duration_minutes:
+          type: number
+        summary:
+          type: string
+        waypoints:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+        hazards_on_route:
+          type: array
+          items:
+            $ref: '#/components/schemas/Hazard'
+
+    TrainingStatus:
+      type: object
+      properties:
+        current_version:
+          type: string
+        sample_count:
+          type: integer
+        last_trained_at:
+          type: string
+        metrics:
+          type: object
+          properties:
+            accuracy:
+              type: number
+            f1_score:
+              type: number
