@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoCompliant-ML | Guided Optimization Wizard</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN (maintained for compatibility) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Plotly.js CDN -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+              900: '#0c4a6e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .stepper-active { border-color: #38bdf8; background-color: rgba(56, 189, 248, 0.1); color: #38bdf8; }
+    .stepper-completed { border-color: #10b981; background-color: rgba(16, 185, 129, 0.1); color: #10b981; }
+    .stepper-disabled { opacity: 0.45; cursor: not-allowed; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <span class="text-2xl">⚙️</span>
+      <div>
+        <h1 class="text-lg font-bold text-sky-400 tracking-wide">AutoCompliant-ML Studio</h1>
+        <p class="text-xs text-slate-400">Autonomous Machine Learning & NSGA-II Optimization Wizard</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-4">
+      <span id="sessionBadge" class="hidden text-xs font-mono bg-sky-950 text-sky-300 border border-sky-800 rounded-full px-3 py-1">
+        Session: <span id="sessionBadgeId">none</span>
+      </span>
+      <button onclick="resetSession()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded border border-slate-700 transition">
+        🔄 Phiên Mới
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col gap-6">
+
+    <!-- Stepper Navigation Bar -->
+    <nav class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
+      <ol class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm font-medium">
+        <!-- Step 1 Nav -->
+        <li id="nav-step-1" class="stepper-active flex items-center gap-3 p-3 rounded-lg border transition">
+          <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-sky-500/20 text-sky-400 border border-sky-500">1</span>
+          <div>
+            <div class="font-semibold text-slate-200">Bước 1: Dữ liệu</div>
+            <div class="text-xs text-slate-400">Topology & Dataset</div>
+          </div>
+        </li>
+
+        <!-- Step 2 Nav -->
+        <li id="nav-step-2" class="stepper-disabled flex items-center gap-3 p-3 rounded-lg border border-slate-800 transition">
+          <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700">2</span>
+          <div>
+            <div class="font-semibold text-slate-400">Bước 2: Huấn luyện</div>
+            <div class="text-xs text-slate-500">Model Zoo Benchmark</div>
+          </div>
+        </li>
+
+        <!-- Step 3 Nav -->
+        <li id="nav-step-3" class="stepper-disabled flex items-center gap-3 p-3 rounded-lg border border-slate-800 transition">
+          <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700">3</span>
+          <div>
+            <div class="font-semibold text-slate-400">Bước 3: Tối ưu hóa</div>
+            <div class="text-xs text-slate-500">NSGA-II & Pareto Front</div>
+          </div>
+        </li>
+
+        <!-- Step 4 Nav -->
+        <li id="nav-step-4" class="stepper-disabled flex items-center gap-3 p-3 rounded-lg border border-slate-800 transition">
+          <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700">4</span>
+          <div>
+            <div class="font-semibold text-slate-400">Bước 4: Kết quả</div>
+            <div class="text-xs text-slate-500">TOPSIS & Xuất File</div>
+          </div>
+        </li>
+      </ol>
+    </nav>
+
+    <!-- Global Alert Box -->
+    <div id="alertBox" class="hidden rounded-lg p-4 border text-sm"></div>
+
+    <!-- Loading Overlay / Spinner -->
+    <div id="loadingBox" class="hidden bg-sky-950/40 border border-sky-800/80 rounded-xl p-5 flex items-center justify-center gap-4 text-sky-300 animate-pulse">
+      <svg class="animate-spin h-6 w-6 text-sky-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+      </svg>
+      <span id="loadingText" class="font-medium text-sm">Đang xử lý yêu cầu...</span>
+    </div>
+
+    <!-- ==================== STEP 1: TOPOLOGY & DATASET ==================== -->
+    <section id="step-1" class="step-card bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-6">
+      <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+        <div>
+          <h2 class="text-lg font-bold text-sky-400">Bước 1: Khởi tạo Cấu hình Topology & Nạp Dữ liệu</h2>
+          <p class="text-xs text-slate-400">Chọn cấu hình cơ cấu đàn hồi và nạp dữ liệu mô phỏng phần tử hữu hạn (FEA).</p>
+        </div>
+        <span class="text-xs bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700">Bước 1 / 4</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Left: Config & Data Source Inputs -->
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Cấu trúc Cơ cấu (Topology Config)</label>
+            <select id="topologySelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:border-sky-500 focus:outline-none" onchange="onTopologyChange()">
+              <option value="">Đang tải danh sách topology...</option>
+            </select>
+          </div>
+
+          <div id="topologyDetailsCard" class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs space-y-2 text-slate-300">
+            <div class="flex justify-between">
+              <span class="text-slate-500">Mô tả:</span>
+              <span id="topoDesc" class="font-medium text-right text-slate-300">-</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">Số biến đầu vào (Din):</span>
+              <span id="topoDin" class="font-bold text-sky-400">-</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">Số đáp ứng đầu ra (Dout):</span>
+              <span id="topoDout" class="font-bold text-emerald-400">-</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">Biến đầu vào:</span>
+              <span id="topoInputs" class="font-mono text-slate-400 text-right">-</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">Mục tiêu / Ràng buộc:</span>
+              <span id="topoOutputs" class="font-mono text-slate-400 text-right">-</span>
+            </div>
+          </div>
+
+          <!-- Data Mode Selection -->
+          <div class="space-y-3 pt-2">
+            <label class="block text-xs font-semibold text-slate-300 uppercase">Nguồn Dữ liệu</label>
+            <div class="flex gap-4">
+              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="radio" name="dataSource" value="synthetic" checked onchange="toggleDataSourceMode()" class="accent-sky-500">
+                <span>Sinh tổng hợp (Synthetic)</span>
+              </label>
+              <label class="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <input type="radio" name="dataSource" value="upload" onchange="toggleDataSourceMode()" class="accent-sky-500">
+                <span>Tải lên tệp (CSV / Parquet)</span>
+              </label>
+            </div>
+
+            <!-- Synthetic Input -->
+            <div id="syntheticContainer" class="flex items-center gap-3">
+              <label class="text-xs text-slate-400">Số mẫu:</label>
+              <input type="number" id="syntheticSamples" value="350" min="50" max="3000" class="w-32 bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:border-sky-500 focus:outline-none">
+            </div>
+
+            <!-- Upload Input -->
+            <div id="uploadContainer" class="hidden space-y-2">
+              <input type="file" id="datasetFile" accept=".csv,.parquet" class="block w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-sky-950 file:text-sky-300 hover:file:bg-sky-900 cursor-pointer border border-slate-700 rounded-lg bg-slate-950">
+              <p class="text-xs text-slate-500">Hỗ trợ định dạng CSV hoặc Parquet với đầy đủ các cột $X$ và $Y$ tương ứng topology.</p>
+            </div>
+          </div>
+
+          <button id="btnStep1Submit" onclick="submitStep1()" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2.5 px-4 rounded-lg text-sm shadow transition flex items-center justify-center gap-2">
+            <span>📥 Xác thực & Nạp Dữ liệu</span>
+          </button>
+        </div>
+
+        <!-- Right: Data Preview & Summary -->
+        <div class="space-y-4 flex flex-col">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-semibold text-slate-300 uppercase">Tóm tắt & Xem trước Dữ liệu</span>
+            <span id="dataSummaryBadge" class="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded">Chưa nạp dữ liệu</span>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-lg flex-1 overflow-hidden flex flex-col p-3">
+            <div class="overflow-x-auto max-h-72">
+              <table id="previewTable" class="w-full text-xs text-left text-slate-300">
+                <thead class="text-slate-400 uppercase bg-slate-900 sticky top-0 border-b border-slate-800">
+                  <tr id="previewTableHead">
+                    <th class="p-2">Chưa có dữ liệu</th>
+                  </tr>
+                </thead>
+                <tbody id="previewTableBody" class="divide-y divide-slate-800/60">
+                  <tr><td class="p-4 text-center text-slate-500">Vui lòng nạp hoặc sinh dữ liệu ở bảng bên trái.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="border-t border-slate-800 pt-4 flex justify-end">
+        <button id="btnToStep2" onclick="goToStep(2)" disabled class="bg-slate-800 text-slate-500 font-semibold py-2 px-5 rounded-lg text-sm cursor-not-allowed transition">
+          Tiếp tục sang Bước 2 ➔
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== STEP 2: MODEL ZOO BENCHMARK ==================== -->
+    <section id="step-2" class="step-card hidden bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-6">
+      <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+        <div>
+          <h2 class="text-lg font-bold text-sky-400">Bước 2: Huấn luyện & So chuẩn Mô hình (Model Zoo Benchmark)</h2>
+          <p class="text-xs text-slate-400">So sánh 6 mô hình học máy đa mục tiêu (GPR, XGBoost, LightGBM, MLP, Polynomial RSM, Random Forest) qua K-Fold Cross-Validation.</p>
+        </div>
+        <span class="text-xs bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700">Bước 2 / 4</span>
+      </div>
+
+      <!-- Controls -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Số Fold Cross-Validation (K-Fold)</label>
+          <select id="cvFoldsSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200">
+            <option value="5" selected>5 Folds (Khuyến nghị)</option>
+            <option value="3">3 Folds (Nhanh)</option>
+            <option value="2">2 Folds (Chạy thử nghiệm)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Bộ Chuẩn hóa (Scaler Type)</label>
+          <select id="scalerTypeSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200">
+            <option value="standard" selected>StandardScaler (Zero mean, unit variance)</option>
+            <option value="minmax">MinMaxScaler ([0, 1] range)</option>
+          </select>
+        </div>
+        <div class="flex items-end">
+          <button id="btnStep2Train" onclick="submitStep2()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg text-sm shadow transition flex items-center justify-center gap-2">
+            <span>🚀 Bắt đầu Huấn luyện & Benchmark</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Benchmark Leaderboard -->
+      <div class="space-y-3">
+        <div class="flex justify-between items-center">
+          <span class="text-xs font-semibold text-slate-300 uppercase">Bảng Xếp Hạng (Model Zoo Leaderboard)</span>
+          <span id="bestModelBadge" class="hidden text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-3 py-1 rounded-full font-bold">
+            Mô hình Tối ưu: <span id="bestModelNameText">-</span>
+          </span>
+        </div>
+
+        <div class="bg-slate-950 border border-slate-800 rounded-lg overflow-x-auto">
+          <table class="w-full text-xs text-left text-slate-300">
+            <thead class="text-slate-400 uppercase bg-slate-900 border-b border-slate-800">
+              <tr>
+                <th class="p-3">Hạng</th>
+                <th class="p-3">Mô hình</th>
+                <th class="p-3">Test R² (Trung bình)</th>
+                <th class="p-3">CV R²</th>
+                <th class="p-3">RMSE</th>
+                <th class="p-3">MAE</th>
+                <th class="p-3">Độ trễ suy luận (ms/1k)</th>
+                <th class="p-3 text-center">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardBody" class="divide-y divide-slate-800">
+              <tr><td colspan="8" class="p-4 text-center text-slate-500">Chưa chạy benchmark. Nhấn nút "Bắt đầu Huấn luyện" ở trên.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Scatter Actual vs Predicted Chart -->
+      <div class="space-y-2">
+        <span class="text-xs font-semibold text-slate-300 uppercase">Đồ thị So sánh Giá trị Thực tế vs Dự đoán (Actual vs Predicted)</span>
+        <div id="scatterPlotBox" class="bg-slate-950 border border-slate-800 rounded-lg p-2 h-72 flex items-center justify-center text-slate-500 text-xs">
+          Biểu đồ sẽ hiển thị sau khi benchmark hoàn tất.
+        </div>
+      </div>
+
+      <div class="border-t border-slate-800 pt-4 flex justify-between">
+        <button onclick="goToStep(1)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-4 rounded-lg text-sm transition">
+          ⬅ Quay lại Bước 1
+        </button>
+        <button id="btnToStep3" onclick="goToStep(3)" disabled class="bg-slate-800 text-slate-500 font-semibold py-2 px-5 rounded-lg text-sm cursor-not-allowed transition">
+          Tiếp tục sang Bước 3 ➔
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== STEP 3: NSGA-II OPTIMIZATION ==================== -->
+    <section id="step-3" class="step-card hidden bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-6">
+      <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+        <div>
+          <h2 class="text-lg font-bold text-sky-400">Bước 3: Tối ưu hóa Tiến hóa Đa mục tiêu (NSGA-II & Pareto Front)</h2>
+          <p class="text-xs text-slate-400">Tìm tập nghiệm Pareto thỏa mãn ràng buộc hệ số an toàn tĩnh $F_1 \ge 1.5$ và xác định điểm Knee-point bằng TOPSIS.</p>
+        </div>
+        <span class="text-xs bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700">Bước 3 / 4</span>
+      </div>
+
+      <!-- Optimization Parameters -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Kích thước Quần thể (Pop Size)</label>
+          <input type="number" id="optPopSize" value="80" min="20" max="300" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Số Thế hệ Tiến hóa (Generations)</label>
+          <input type="number" id="optGenerations" value="50" min="10" max="300" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase mb-1">Surrogate Model sử dụng</label>
+          <select id="optModelSelect" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-slate-200">
+            <option value="">Tự động (Best Model)</option>
+          </select>
+        </div>
+        <div class="flex items-end">
+          <button id="btnStep3Optimize" onclick="submitStep3()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 px-4 rounded-lg text-sm shadow transition flex items-center justify-center gap-2">
+            <span>🎯 Chạy NSGA-II & TOPSIS</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Summary metrics -->
+      <div id="optSummaryBox" class="hidden grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
+          <div class="text-xs text-slate-400">Số nghiệm Pareto</div>
+          <div id="statParetoCount" class="text-xl font-bold text-sky-400 mt-1">0</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
+          <div class="text-xs text-slate-400">Thời gian Thực thi</div>
+          <div id="statOptTime" class="text-xl font-bold text-amber-400 mt-1">0s</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
+          <div class="text-xs text-slate-400">Chỉ số Nghiệm TOPSIS</div>
+          <div id="statTopsisIndex" class="text-xl font-bold text-emerald-400 mt-1"># -</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
+          <div class="text-xs text-slate-400">Ràng buộc Thỏa mãn</div>
+          <div class="text-xl font-bold text-emerald-400 mt-1">100%</div>
+        </div>
+      </div>
+
+      <!-- Plotly 2D Pareto Front Interactive Chart -->
+      <div class="space-y-2">
+        <div class="flex justify-between items-center">
+          <span class="text-xs font-semibold text-slate-300 uppercase">Biểu đồ Mặt trước Pareto Tương tác (Plotly.js: F2 vs f)</span>
+          <span class="text-xs text-slate-400">⭐ Ngôi sao đỏ: Điểm tối ưu thỏa hiệp TOPSIS Knee-point</span>
+        </div>
+        <div id="paretoPlotlyBox" class="bg-slate-950 border border-slate-800 rounded-lg p-2 h-96 flex items-center justify-center text-slate-500 text-xs">
+          Biểu đồ Pareto Front sẽ hiển thị tại đây sau khi tối ưu hóa.
+        </div>
+      </div>
+
+      <div class="border-t border-slate-800 pt-4 flex justify-between">
+        <button onclick="goToStep(2)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-4 rounded-lg text-sm transition">
+          ⬅ Quay lại Bước 2
+        </button>
+        <button id="btnToStep4" onclick="goToStep(4)" disabled class="bg-slate-800 text-slate-500 font-semibold py-2 px-5 rounded-lg text-sm cursor-not-allowed transition">
+          Tiếp tục sang Bước 4 ➔
+        </button>
+      </div>
+    </section>
+
+    <!-- ==================== STEP 4: RESULTS & EXPORTS ==================== -->
+    <section id="step-4" class="step-card hidden bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col gap-6">
+      <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+        <div>
+          <h2 class="text-lg font-bold text-sky-400">Bước 4: Tổng kết Nghiệm Tối ưu & Xuất File (Exports)</h2>
+          <p class="text-xs text-slate-400">Cấu hình hình học tối ưu đã được giải và xuất các tệp artifacts cho quy trình CAD/FEA.</p>
+        </div>
+        <span class="text-xs bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700">Bước 4 / 4</span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Optimal Inputs Card -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+          <h3 class="text-sm font-bold text-sky-400 uppercase tracking-wider flex items-center gap-2">
+            <span>📐 Cấu hình Hình học Tối ưu (Knee-Point Design Vector)</span>
+          </h3>
+          <div id="designInputsList" class="space-y-2 text-xs divide-y divide-slate-800/80">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+
+        <!-- Predicted Responses Card -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+          <h3 class="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+            <span>⚡ Đáp ứng Cơ học Dự đoán (Predicted Mechanical Responses)</span>
+          </h3>
+          <div id="responsesList" class="space-y-2 text-xs divide-y divide-slate-800/80">
+            <!-- Populated via JS -->
+          </div>
+
+          <div class="pt-3 border-t border-slate-800 text-xs flex justify-between items-center text-slate-400">
+            <span>TOPSIS Relative Closeness:</span>
+            <span id="statTopsisScore" class="font-bold text-amber-400 text-sm">-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Export Download Bar -->
+      <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-3">
+        <h3 class="text-xs font-semibold text-slate-300 uppercase">Tải xuống Tệp Kết quả & Mô hình (Artifacts)</h3>
+        <div class="flex flex-wrap gap-4">
+          <a id="btnDownloadPareto" href="#" target="_blank" class="bg-sky-600 hover:bg-sky-500 text-white font-medium py-2.5 px-4 rounded-lg text-xs flex items-center gap-2 shadow transition">
+            <span>📊 Tải Pareto Front (CSV)</span>
+          </a>
+          <a id="btnDownloadConfig" href="#" target="_blank" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 px-4 rounded-lg text-xs flex items-center gap-2 shadow transition">
+            <span>⚙️ Tải Cấu hình CAD (JSON)</span>
+          </a>
+          <a id="btnDownloadModel" href="#" target="_blank" class="bg-purple-600 hover:bg-purple-500 text-white font-medium py-2.5 px-4 rounded-lg text-xs flex items-center gap-2 shadow transition">
+            <span>🧠 Tải Mô hình Surrogate (PKL)</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="border-t border-slate-800 pt-4 flex justify-between">
+        <button onclick="goToStep(3)" class="bg-slate-800 hover:bg-slate-700 text-slate-300 py-2 px-4 rounded-lg text-sm transition">
+          ⬅ Quay lại Bước 3
+        </button>
+        <button onclick="resetSession()" class="bg-sky-700 hover:bg-sky-600 text-white font-semibold py-2 px-5 rounded-lg text-sm shadow transition">
+          🔄 Bắt đầu Phiên Làm Việc Mới
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-900 bg-slate-950 p-4 text-center text-xs text-slate-600">
+    AutoCompliant-ML &copy; 2026. Micro-positioning Compliant Mechanism Multi-Objective Optimization.
+  </footer>
+
+  <!-- Wizard State Machine Client Script -->
+  <script>
+    const state = {
+      currentStep: 1,
+      unlockedStep: 1,
+      sessionId: null,
+      topologies: [],
+      selectedTopology: null,
+      step1Data: null,
+      step2Data: null,
+      step3Data: null,
+    };
+
+    function showAlert(msg, isError = false) {
+      const box = document.getElementById('alertBox');
+      box.className = isError
+        ? 'rounded-lg p-4 border text-sm bg-rose-950/60 border-rose-800 text-rose-300 block'
+        : 'rounded-lg p-4 border text-sm bg-sky-950/60 border-sky-800 text-sky-300 block';
+      box.innerHTML = (isError ? '⚠️ ' : 'ℹ️ ') + msg;
+      box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function hideAlert() {
+      document.getElementById('alertBox').className = 'hidden';
+    }
+
+    function showLoading(msg) {
+      hideAlert();
+      const box = document.getElementById('loadingBox');
+      document.getElementById('loadingText').innerText = msg;
+      box.classList.remove('hidden');
+    }
+
+    function hideLoading() {
+      document.getElementById('loadingBox').classList.add('hidden');
+    }
+
+    function updateSessionBadge(sessionId) {
+      state.sessionId = sessionId;
+      const badge = document.getElementById('sessionBadge');
+      if (sessionId) {
+        document.getElementById('sessionBadgeId').innerText = sessionId;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+
+    function goToStep(stepNum) {
+      if (stepNum > state.unlockedStep) {
+        showAlert('Vui lòng hoàn thành bước trước đó trước khi tiếp tục.', true);
+        return;
+      }
+      hideAlert();
+      state.currentStep = stepNum;
+
+      // Toggle step cards
+      for (let s = 1; s <= 4; s++) {
+        const card = document.getElementById('step-' + s);
+        const nav = document.getElementById('nav-step-' + s);
+        if (s === stepNum) {
+          card.classList.remove('hidden');
+          nav.className = 'stepper-active flex items-center gap-3 p-3 rounded-lg border transition';
+        } else {
+          card.classList.add('hidden');
+          if (s < state.unlockedStep) {
+            nav.className = 'stepper-completed flex items-center gap-3 p-3 rounded-lg border transition cursor-pointer';
+            nav.onclick = () => goToStep(s);
+          } else {
+            nav.className = 'stepper-disabled flex items-center gap-3 p-3 rounded-lg border border-slate-800 transition';
+            nav.onclick = null;
+          }
+        }
+      }
+    }
+
+    function toggleDataSourceMode() {
+      const mode = document.querySelector('input[name="dataSource"]:checked').value;
+      if (mode === 'synthetic') {
+        document.getElementById('syntheticContainer').classList.remove('hidden');
+        document.getElementById('uploadContainer').classList.add('hidden');
+      } else {
+        document.getElementById('syntheticContainer').classList.add('hidden');
+        document.getElementById('uploadContainer').classList.remove('hidden');
+      }
+    }
+
+    async function loadTopologies() {
+      try {
+        const res = await fetch('/api/topologies');
+        const data = await res.json();
+        state.topologies = data.topologies || [];
+        const sel = document.getElementById('topologySelect');
+        sel.innerHTML = '';
+        state.topologies.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.filename;
+          opt.innerText = t.name + ' (' + t.filename + ')';
+          sel.appendChild(opt);
+        });
+        if (state.topologies.length > 0) {
+          onTopologyChange();
+        }
+      } catch (err) {
+        showAlert('Lỗi khi tải danh sách topology: ' + err.message, true);
+      }
+    }
+
+    function onTopologyChange() {
+      const filename = document.getElementById('topologySelect').value;
+      const topo = state.topologies.find(t => t.filename === filename);
+      if (!topo) return;
+      state.selectedTopology = topo;
+
+      document.getElementById('topoDesc').innerText = topo.description || '-';
+      document.getElementById('topoDin').innerText = topo.D_in;
+      document.getElementById('topoDout').innerText = topo.D_out;
+      document.getElementById('topoInputs').innerText = topo.inputs.map(i => i.name).join(', ');
+      document.getElementById('topoOutputs').innerText = topo.outputs.map(o => o.symbol || o.name).join(', ');
+    }
+
+    // Step 1: Submit Data
+    async function submitStep1() {
+      const topoFile = document.getElementById('topologySelect').value;
+      if (!topoFile) {
+        showAlert('Vui lòng chọn topology.', true);
+        return;
+      }
+      const mode = document.querySelector('input[name="dataSource"]:checked').value;
+      const formData = new FormData();
+      formData.append('topology_name', topoFile);
+
+      if (mode === 'synthetic') {
+        const count = document.getElementById('syntheticSamples').value || 350;
+        formData.append('use_synthetic', 'true');
+        formData.append('n_synthetic_samples', count);
+        showLoading('Đang sinh ' + count + ' mẫu dữ liệu tổng hợp dựa trên cơ chế vật lý...');
+      } else {
+        const fileInput = document.getElementById('datasetFile');
+        if (!fileInput.files || fileInput.files.length === 0) {
+          showAlert('Vui lòng chọn tệp CSV hoặc Parquet để tải lên.', true);
+          return;
+        }
+        formData.append('file', fileInput.files[0]);
+        formData.append('use_synthetic', 'false');
+        showLoading('Đang tải lên và kiểm tra tính hợp lệ của tệp dữ liệu...');
+      }
+
+      try {
+        const res = await fetch('/api/wizard/step1-data', { method: 'POST', body: formData });
+        const data = await res.json();
+        hideLoading();
+
+        if (!res.ok) {
+          showAlert(data.detail || 'Không thể nạp dữ liệu.', true);
+          return;
+        }
+
+        state.step1Data = data;
+        updateSessionBadge(data.session_id);
+        renderPreviewTable(data.data_summary);
+
+        // Unlock Step 2
+        state.unlockedStep = Math.max(state.unlockedStep, data.next_step_unlocked || 2);
+        const btnNext = document.getElementById('btnToStep2');
+        btnNext.disabled = false;
+        btnNext.className = 'bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-5 rounded-lg text-sm transition';
+
+        showAlert('Đã nạp thành công ' + data.data_summary.num_samples + ' mẫu dữ liệu. Bước 2 đã được mở khóa!');
+      } catch (err) {
+        hideLoading();
+        showAlert('Lỗi mạng hoặc server: ' + err.message, true);
+      }
+    }
+
+    function renderPreviewTable(summary) {
+      document.getElementById('dataSummaryBadge').innerText = summary.num_samples + ' mẫu (' + summary.input_features.length + ' in, ' + summary.output_targets.length + ' out)';
+      const allCols = [...summary.input_features, ...summary.output_targets];
+
+      const thead = document.getElementById('previewTableHead');
+      thead.innerHTML = allCols.map(c => '<th class="p-2">' + c + '</th>').join('');
+
+      const tbody = document.getElementById('previewTableBody');
+      tbody.innerHTML = (summary.preview_rows || []).map(row => {
+        return '<tr class="hover:bg-slate-900/60">' + allCols.map(c => {
+          const val = row[c];
+          return '<td class="p-2 font-mono">' + (typeof val === 'number' ? val.toFixed(3) : val) + '</td>';
+        }).join('') + '</tr>';
+      }).join('');
+    }
+
+    // Step 2: Run Benchmark
+    async function submitStep2() {
+      if (!state.sessionId) {
+        showAlert('Chưa có session. Vui lòng hoàn thành Bước 1 trước.', true);
+        return;
+      }
+      const cvFolds = parseInt(document.getElementById('cvFoldsSelect').value) || 5;
+      const scalerType = document.getElementById('scalerTypeSelect').value || 'standard';
+
+      showLoading('Đang huấn luyện ' + cvFolds + '-Fold Cross-Validation cho 6 mô hình Model Zoo. Quá trình mất khoảng vài giây...');
+
+      try {
+        const res = await fetch('/api/wizard/step2-train', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: state.sessionId,
+            cv_folds: cvFolds,
+            scaler_type: scalerType,
+          })
+        });
+        const data = await res.json();
+        hideLoading();
+
+        if (!res.ok) {
+          showAlert(data.detail || 'Lỗi huấn luyện mô hình.', true);
+          return;
+        }
+
+        state.step2Data = data;
+        renderLeaderboard(data.leaderboard, data.best_model);
+        renderScatterPlot(data.scatter_data, data.best_model);
+
+        // Populate model dropdown in Step 3
+        const optSelect = document.getElementById('optModelSelect');
+        optSelect.innerHTML = '<option value="">Tự động: ' + data.best_model + ' (Khuyến nghị)</option>';
+        (data.leaderboard || []).forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.model;
+          opt.innerText = m.model + (m.is_best ? ' (⭐ Top 1)' : '');
+          optSelect.appendChild(opt);
+        });
+
+        // Unlock Step 3
+        state.unlockedStep = Math.max(state.unlockedStep, data.next_step_unlocked || 3);
+        const btnNext = document.getElementById('btnToStep3');
+        btnNext.disabled = false;
+        btnNext.className = 'bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-5 rounded-lg text-sm transition';
+
+        showAlert('Huấn luyện hoàn tất! Mô hình tốt nhất là ' + data.best_model + '. Bước 3 đã mở khóa.');
+      } catch (err) {
+        hideLoading();
+        showAlert('Lỗi: ' + err.message, true);
+      }
+    }
+
+    function renderLeaderboard(leaderboard, bestModel) {
+      document.getElementById('bestModelNameText').innerText = bestModel;
+      document.getElementById('bestModelBadge').classList.remove('hidden');
+
+      const tbody = document.getElementById('leaderboardBody');
+      tbody.innerHTML = (leaderboard || []).map((m, idx) => {
+        const isBest = m.is_best;
+        return '<tr class="' + (isBest ? 'bg-sky-950/30 font-semibold' : 'hover:bg-slate-900/60') + '">' +
+          '<td class="p-3">' + (isBest ? '⭐ #' + (idx+1) : '#' + (idx+1)) + '</td>' +
+          '<td class="p-3 text-slate-200">' + m.model + '</td>' +
+          '<td class="p-3 font-mono ' + (m.mean_r2 >= 0.95 ? 'text-emerald-400' : 'text-slate-300') + '">' + m.mean_r2.toFixed(4) + '</td>' +
+          '<td class="p-3 font-mono text-slate-400">' + (m.cv_r2 !== undefined ? m.cv_r2.toFixed(4) : '-') + '</td>' +
+          '<td class="p-3 font-mono text-slate-400">' + m.rmse.toFixed(4) + '</td>' +
+          '<td class="p-3 font-mono text-slate-400">' + (m.mae !== undefined ? m.mae.toFixed(4) : '-') + '</td>' +
+          '<td class="p-3 font-mono text-slate-400">' + m.latency_ms.toFixed(2) + ' ms</td>' +
+          '<td class="p-3 text-center">' + (isBest ? '<span class="bg-emerald-900/60 text-emerald-300 border border-emerald-700 px-2 py-0.5 rounded text-[10px]">TỐI ƯU</span>' : '<span class="text-slate-500 text-[10px]">PASS</span>') + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    function renderScatterPlot(scatterData, modelName) {
+      const box = document.getElementById('scatterPlotBox');
+      if (!scatterData || !scatterData.actual) {
+        box.innerHTML = '<span class="text-slate-500">Không có dữ liệu scatter.</span>';
+        return;
+      }
+      box.innerHTML = '<div id="plotlyScatter" style="width:100%;height:100%;"></div>';
+
+      const actual = scatterData.actual;
+      const predicted = scatterData.predicted;
+      const minVal = Math.min(...actual, ...predicted);
+      const maxVal = Math.max(...actual, ...predicted);
+
+      const tracePoints = {
+        x: actual,
+        y: predicted,
+        mode: 'markers',
+        type: 'scatter',
+        name: 'Dự đoán vs Thực tế',
+        marker: { color: '#38bdf8', size: 6, opacity: 0.8 },
+      };
+
+      const traceLine = {
+        x: [minVal, maxVal],
+        y: [minVal, maxVal],
+        mode: 'lines',
+        type: 'scatter',
+        name: 'Đường lý tưởng (y = x)',
+        line: { color: '#ef4444', dash: 'dash', width: 1.5 },
+      };
+
+      const layout = {
+        title: { text: 'Kiểm tra Khớp của ' + modelName + ' (' + (scatterData.target_name || 'Mục tiêu') + ')', font: { color: '#94a3b8', size: 12 } },
+        paper_bgcolor: 'transparent',
+        plot_bgcolor: 'transparent',
+        xaxis: { title: 'Giá trị Thực tế (Actual)', color: '#94a3b8', gridcolor: '#33415533' },
+        yaxis: { title: 'Giá trị Dự đoán (Predicted)', color: '#94a3b8', gridcolor: '#33415533' },
+        margin: { t: 30, r: 20, l: 50, b: 40 },
+        legend: { font: { color: '#94a3b8' } },
+      };
+
+      Plotly.newPlot('plotlyScatter', [tracePoints, traceLine], layout, { responsive: true, displayModeBar: false });
+    }
+
+    // Step 3: Run Optimization
+    async function submitStep3() {
+      if (!state.sessionId) {
+        showAlert('Chưa có session. Vui lòng hoàn thành Bước 2 trước.', true);
+        return;
+      }
+      const popSize = parseInt(document.getElementById('optPopSize').value) || 80;
+      const generations = parseInt(document.getElementById('optGenerations').value) || 50;
+      const selectedModel = document.getElementById('optModelSelect').value || null;
+
+      showLoading('Đang giải thuật toán tiến hóa NSGA-II (Quần thể: ' + popSize + ', Thế hệ: ' + generations + ') & lọc nghiệm TOPSIS...');
+
+      try {
+        const res = await fetch('/api/wizard/step3-optimize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: state.sessionId,
+            pop_size: popSize,
+            generations: generations,
+            selected_model: selectedModel,
+          })
+        });
+        const data = await res.json();
+        hideLoading();
+
+        if (!res.ok) {
+          showAlert(data.detail || 'Lỗi tối ưu hóa.', true);
+          return;
+        }
+
+        state.step3Data = data;
+
+        // Update stats
+        document.getElementById('statParetoCount').innerText = data.pareto_summary.num_pareto_points;
+        document.getElementById('statOptTime').innerText = data.pareto_summary.execution_time_sec + 's';
+        document.getElementById('statTopsisIndex').innerText = '#' + (data.topsis_best_index + 1);
+        document.getElementById('optSummaryBox').classList.remove('hidden');
+
+        // Render Plotly Pareto Front
+        renderPlotlyPareto(data.pareto_points, data.topsis_best_index);
+
+        // Unlock Step 4
+        state.unlockedStep = Math.max(state.unlockedStep, data.next_step_unlocked || 4);
+        const btnNext = document.getElementById('btnToStep4');
+        btnNext.disabled = false;
+        btnNext.className = 'bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-5 rounded-lg text-sm transition';
+
+        showAlert('Tìm được ' + data.pareto_summary.num_pareto_points + ' nghiệm Pareto trong ' + data.pareto_summary.execution_time_sec + 's. Bước 4 đã mở khóa!');
+      } catch (err) {
+        hideLoading();
+        showAlert('Lỗi: ' + err.message, true);
+      }
+    }
+
+    function renderPlotlyPareto(points, topsisIdx) {
+      const box = document.getElementById('paretoPlotlyBox');
+      box.innerHTML = '<div id="plotlyPareto" style="width:100%;height:100%;"></div>';
+
+      const xVals = points.map(p => p.F2_displacement !== undefined ? p.F2_displacement : p.output_displacement);
+      const yVals = points.map(p => p.f_frequency !== undefined ? p.f_frequency : p.resonant_frequency);
+      const colorVals = points.map(p => p.F1_safety !== undefined ? p.F1_safety : p.safety_factor);
+      const hoverTexts = points.map((p, idx) => {
+        return 'Nghiệm #' + (idx+1) + '<br>' +
+               'Độ phóng đại F2: ' + (p.F2_displacement || p.output_displacement) + ' µm<br>' +
+               'Tần số f: ' + (p.f_frequency || p.resonant_frequency) + ' Hz<br>' +
+               'Hệ số an toàn F1: ' + (p.F1_safety || p.safety_factor);
+      });
+
+      const paretoTrace = {
+        x: xVals,
+        y: yVals,
+        text: hoverTexts,
+        hoverinfo: 'text',
+        mode: 'markers',
+        type: 'scatter',
+        name: 'Pareto Front Solutions',
+        marker: {
+          size: 7,
+          color: colorVals,
+          colorscale: 'Viridis',
+          colorbar: { title: 'Hệ số An toàn F1', tickfont: { color: '#94a3b8' }, titlefont: { color: '#94a3b8' } },
+          opacity: 0.85,
+        }
+      };
+
+      const kneeTrace = {
+        x: [xVals[topsisIdx]],
+        y: [yVals[topsisIdx]],
+        text: ['⭐ TOPSIS KNEE-POINT: ' + hoverTexts[topsisIdx]],
+        hoverinfo: 'text',
+        mode: 'markers',
+        type: 'scatter',
+        name: '⭐ TOPSIS Knee-Point',
+        marker: {
+          symbol: 'star',
+          size: 16,
+          color: '#f59e0b',
+          line: { color: '#ffffff', width: 2 }
+        }
+      };
+
+      const layout = {
+        paper_bgcolor: 'transparent',
+        plot_bgcolor: 'transparent',
+        xaxis: { title: 'Độ phóng đại dịch chuyển đầu ra F2 (µm)', color: '#94a3b8', gridcolor: '#33415533' },
+        yaxis: { title: 'Tần số cộng hưởng bậc 1 f (Hz)', color: '#94a3b8', gridcolor: '#33415533' },
+        margin: { t: 20, r: 20, l: 60, b: 50 },
+        legend: { font: { color: '#94a3b8' } }
+      };
+
+      Plotly.newPlot('plotlyPareto', [paretoTrace, kneeTrace], layout, { responsive: true });
+    }
+
+    // Step 4: Load Final Results
+    async function loadStep4Results() {
+      if (!state.sessionId) return;
+      showLoading('Đang tổng hợp thông số kết quả tối ưu...');
+      try {
+        const res = await fetch('/api/wizard/step4-results?session_id=' + state.sessionId);
+        const data = await res.json();
+        hideLoading();
+
+        if (!res.ok) {
+          showAlert(data.detail || 'Lỗi khi tải kết quả Bước 4.', true);
+          return;
+        }
+
+        // Render Design Inputs
+        const inBox = document.getElementById('designInputsList');
+        inBox.innerHTML = Object.entries(data.recommended_design_inputs || {}).map(([k, v]) => {
+          return '<div class="flex justify-between py-1.5"><span class="text-slate-400 font-mono">' + k + '</span><span class="font-bold text-sky-400 font-mono">' + (typeof v === 'number' ? v.toFixed(4) : v) + ' mm</span></div>';
+        }).join('');
+
+        // Render Responses
+        const outBox = document.getElementById('responsesList');
+        outBox.innerHTML = Object.entries(data.predicted_mechanical_responses || {}).map(([k, v]) => {
+          let unit = '';
+          if (k.includes('displacement')) unit = ' µm';
+          else if (k.includes('frequency')) unit = ' Hz';
+          return '<div class="flex justify-between py-1.5"><span class="text-slate-400 font-mono">' + k + '</span><span class="font-bold text-emerald-400 font-mono">' + (typeof v === 'number' ? v.toFixed(4) : v) + unit + '</span></div>';
+        }).join('');
+
+        document.getElementById('statTopsisScore').innerText = (data.topsis_score !== undefined ? data.topsis_score.toFixed(4) : '-');
+
+        // Set download URLs
+        document.getElementById('btnDownloadPareto').href = '/api/wizard/download/pareto-csv?session_id=' + state.sessionId;
+        document.getElementById('btnDownloadConfig').href = '/api/wizard/download/best-design-json?session_id=' + state.sessionId;
+        document.getElementById('btnDownloadModel').href = '/api/wizard/download/model-pkl?session_id=' + state.sessionId;
+      } catch (err) {
+        hideLoading();
+        showAlert('Lỗi: ' + err.message, true);
+      }
+    }
+
+    // Hook step 4 load
+    const origGoToStep = goToStep;
+    goToStep = function(stepNum) {
+      origGoToStep(stepNum);
+      if (stepNum === 4) {
+        loadStep4Results();
+      }
+    };
+
+    function resetSession() {
+      state.sessionId = null;
+      state.unlockedStep = 1;
+      updateSessionBadge(null);
+      goToStep(1);
+      document.getElementById('btnToStep2').disabled = true;
+      document.getElementById('btnToStep2').className = 'bg-slate-800 text-slate-500 font-semibold py-2 px-5 rounded-lg text-sm cursor-not-allowed transition';
+      document.getElementById('btnToStep3').disabled = true;
+      document.getElementById('btnToStep3').className = 'bg-slate-800 text-slate-500 font-semibold py-2 px-5 rounded-lg text-sm cursor-not-allowed transition';
+      document.getElementById('btnToStep4').disabled = true;
+      document.getElementById('btnToStep4').className = 'bg-slate-800 text-slate-500 font-semibold py-2 px-5 rounded-lg text-sm cursor-not-allowed transition';
+      showAlert('Đã khởi tạo phiên mới.');
+    }
+
+    // Initialize on window load
+    window.addEventListener('DOMContentLoaded', () => {
+      loadTopologies();
+    });
+  </script>
+</body>
+</html>

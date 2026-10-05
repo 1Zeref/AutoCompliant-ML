@@ -1,38 +1,110 @@
-"""FastAPI Web Application and REST API for AutoCompliant-ML End-to-End Pipeline."""
+"""FastAPI Web Application and Guided Stepper Wizard REST API for AutoCompliant-ML."""
 
 import io
 import json
 import pickle
+import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Literal
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from pydantic import BaseModel, Field
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 
 from autocompliant.config.loader import load_topology_config
 from autocompliant.config.schema import TopologyConfig
 from autocompliant.data.dataset import CompliantDataset
+from autocompliant.data.preprocessor import AdaptivePreprocessor
 from autocompliant.data.synthetic_generator import SyntheticCompliantGenerator
 from autocompliant.evaluation.benchmark import ModelBenchmarkEngine, BenchmarkResult
 from autocompliant.optimization.problem import CompliantMechanismProblem
 from autocompliant.optimization.nsga2_solver import NSGA2Solver, OptimizationResult
 from autocompliant.optimization.mcdm import topsis_select_best_tradeoff
+from autocompliant.models.base import BaseSurrogateModel
 from autocompliant.models import (
     PolynomialRSMSurrogate,
     RandomForestSurrogate,
     XGBoostSurrogate,
     LightGBMSurrogate,
+    AdaptiveMLPSurrogate,
     MultiOutputGPR,
 )
 
 app = FastAPI(
     title="AutoCompliant-ML WebUI",
     description="Config-driven Machine Learning & NSGA-II Optimization Dashboard for Compliant Mechanisms",
-    version="1.0.0",
+    version="2.0.0",
 )
 
-# In-memory session state for interactive WebUI workflow
+
+# ==============================================================================
+# 1. Pydantic Request & Response Schemas
+# ==============================================================================
+
+class Step2Request(BaseModel):
+    session_id: str = Field(..., description="ID của phiên làm việc từ Bước 1")
+    cv_folds: int = Field(default=5, ge=2, le=10, description="Số fold Cross-Validation")
+    scaler_type: Literal["standard", "minmax", "robust"] = Field(
+        default="standard", description="Thuật toán chuẩn hóa dữ liệu"
+    )
+
+
+class Step3Request(BaseModel):
+    session_id: str = Field(..., description="ID của phiên làm việc từ Bước 2")
+    pop_size: int = Field(default=80, ge=20, le=500, description="Kích thước quần thể NSGA-II")
+    generations: int = Field(default=50, ge=10, le=500, description="Số thế hệ tiến hóa")
+    selected_model: Optional[str] = Field(
+        default=None, description="Tên mô hình surrogate muốn sử dụng (mặc định: best model)"
+    )
+
+
+# ==============================================================================
+# 2. Session Management & Server-side Enforced Gate
+# ==============================================================================
+
+class SessionState:
+    """Manages server-side state machine for a single wizard workflow session."""
+
+    def __init__(self, session_id: str, base_dir: Path):
+        self.session_id = session_id
+        self.base_dir = base_dir / session_id
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.config: Optional[TopologyConfig] = None
+        self.config_path: Optional[str] = None
+        self.dataset: Optional[CompliantDataset] = None
+        self.raw_df: Optional[pd.DataFrame] = None
+        self.benchmark_result: Optional[BenchmarkResult] = None
+        self.candidate_models: Dict[str, BaseSurrogateModel] = {}
+        self.best_model: Optional[BaseSurrogateModel] = None
+        self.selected_model: Optional[BaseSurrogateModel] = None
+        self.optimization_result: Optional[OptimizationResult] = None
+        self.topsis_result: Optional[Dict[str, Any]] = None
+        self.current_step: int = 0
+        self.next_step_unlocked: int = 1
+
+
+class SessionManager:
+    """In-memory cache and persistent session workspace manager."""
+
+    def __init__(self, storage_dir: str = "artifacts/sessions"):
+        self.storage_dir = Path(storage_dir)
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.sessions: Dict[str, SessionState] = {}
+
+    def create_session(self) -> SessionState:
+        session_id = f"sess_{uuid.uuid4().hex[:8]}"
+        session = SessionState(session_id, self.storage_dir)
+        self.sessions[session_id] = session
+        return session
+
+    def get_session(self, session_id: str) -> Optional[SessionState]:
+        return self.sessions.get(session_id)
+
+
+SESSION_MANAGER = SessionManager()
+
+# Global legacy session state for backwards compatibility
 SESSION_STATE: Dict[str, Any] = {
     "config": None,
     "config_path": "configs/bridge_amplifier.yaml",
@@ -42,6 +114,420 @@ SESSION_STATE: Dict[str, Any] = {
     "topsis_result": None,
 }
 
+
+# ==============================================================================
+# 3. Wizard Step 1: Topology Discovery & Dataset Validation
+# ==============================================================================
+
+@app.get("/api/topologies")
+def get_topologies():
+    """Return available topology configs with detailed schema, bounds, and symbols."""
+    config_dir = Path("configs")
+    if not config_dir.exists():
+        return {"topologies": []}
+
+    topologies = []
+    for f in sorted(config_dir.glob("*.yaml")):
+        try:
+            cfg = load_topology_config(f)
+            topologies.append({
+                "filename": f.name,
+                "name": cfg.topology.name,
+                "description": cfg.topology.description,
+                "D_in": cfg.D_in,
+                "D_out": cfg.D_out,
+                "inputs": [inp.model_dump() for inp in cfg.inputs],
+                "outputs": [out.model_dump() for out in cfg.outputs],
+                "bounds": {
+                    "lower": cfg.bounds[0].tolist(),
+                    "upper": cfg.bounds[1].tolist(),
+                },
+            })
+        except Exception:
+            continue
+    return {"topologies": topologies}
+
+
+def _resolve_topology_config(topology_name: str) -> TopologyConfig:
+    """Find and load topology configuration flexibly by filename or name."""
+    cand_paths = [
+        Path(topology_name),
+        Path("configs") / topology_name,
+        Path("configs") / f"{topology_name}.yaml",
+    ]
+    for p in cand_paths:
+        if p.is_file():
+            return load_topology_config(p)
+
+    # Search through all yaml configs in configs/
+    config_dir = Path("configs")
+    if config_dir.is_dir():
+        for p in config_dir.glob("*.yaml"):
+            try:
+                cfg = load_topology_config(p)
+                if cfg.topology.name.lower() == topology_name.lower():
+                    return cfg
+            except Exception:
+                continue
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Không tìm thấy cấu hình topology: '{topology_name}'. Vui lòng kiểm tra lại thư mục configs/.",
+    )
+
+
+@app.post("/api/wizard/step1-data")
+async def wizard_step1_data(
+    topology_name: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+    use_synthetic: bool = Form(False),
+    n_synthetic_samples: int = Form(350),
+):
+    """Step 1: Load topology config and validate/generate dataset."""
+    cfg = _resolve_topology_config(topology_name)
+
+    # Validate source options
+    if not use_synthetic and (file is None or not file.filename):
+        raise HTTPException(
+            status_code=400,
+            detail="Vui lòng tải lên tệp dữ liệu (CSV/Parquet) hoặc bật tùy chọn sinh dữ liệu tổng hợp (use_synthetic=true).",
+        )
+
+    df: pd.DataFrame
+    if use_synthetic:
+        samples = max(20, min(10000, n_synthetic_samples))
+        generator = SyntheticCompliantGenerator(cfg, seed=42)
+        df = generator.generate(n_samples=samples, noise_std=0.01)
+    else:
+        # Read uploaded file
+        try:
+            content = await file.read()
+            if not content:
+                raise ValueError("Tệp rỗng không có nội dung.")
+            if file.filename.endswith(".parquet"):
+                df = pd.read_parquet(io.BytesIO(content))
+            else:
+                df = pd.read_csv(io.BytesIO(content))
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Không thể đọc tệp dữ liệu '{file.filename}': {str(e)}",
+            )
+
+        # 1. Check missing columns
+        missing_inputs = [c for c in cfg.input_names if c not in df.columns]
+        missing_outputs = [c for c in cfg.output_names if c not in df.columns]
+        missing_cols = missing_inputs + missing_outputs
+        if missing_cols:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tệp dữ liệu thiếu cột: {missing_cols}. Vui lòng kiểm tra lại cấu hình.",
+            )
+
+        # 2. Check for Null / NaN
+        required_cols = cfg.input_names + cfg.output_names
+        if df[required_cols].isna().any().any():
+            null_cols = [c for c in required_cols if df[c].isna().any()]
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tệp dữ liệu chứa giá trị rỗng (NaN/Null) tại các cột: {null_cols}. Vui lòng làm sạch dữ liệu trước khi tải lên.",
+            )
+
+        # 3. Check numeric data types
+        for col in required_cols:
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                try:
+                    df[col] = pd.to_numeric(df[col])
+                except Exception:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cột '{col}' không phải kiểu số. Tất cả các cột đặc trưng phải có kiểu số (numeric).",
+                    )
+
+    # Initialize new session
+    session = SESSION_MANAGER.create_session()
+    session.config = cfg
+    session.raw_df = df
+    df.to_csv(session.base_dir / "dataset.csv", index=False)
+
+    # Instantiate CompliantDataset
+    dataset = CompliantDataset.from_dataframe(df, cfg, random_state=42)
+    session.dataset = dataset
+    session.current_step = 1
+    session.next_step_unlocked = 2
+
+    # Update global legacy state for backward compatibility
+    SESSION_STATE["config"] = cfg
+    SESSION_STATE["dataset"] = dataset
+
+    preview_rows = df.head(10).to_dict(orient="records")
+    return {
+        "status": "success",
+        "session_id": session.session_id,
+        "data_summary": {
+            "num_samples": len(df),
+            "input_features": cfg.input_names,
+            "output_targets": cfg.output_names,
+            "preview_rows": preview_rows,
+        },
+        "next_step_unlocked": 2,
+    }
+
+
+# ==============================================================================
+# 4. Wizard Step 2: Multi-Output Model Zoo Training & Benchmark
+# ==============================================================================
+
+@app.post("/api/wizard/step2-train")
+def wizard_step2_train(req: Step2Request):
+    """Step 2: Train Model Zoo, evaluate K-Fold CV, rank models, and extract best surrogate."""
+    session = SESSION_MANAGER.get_session(req.session_id)
+    if session is None or session.current_step < 1 or session.dataset is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Bước 1 chưa hoàn thành hoặc session không tồn tại. Vui lòng nạp dữ liệu trước.",
+        )
+
+    # Re-instantiate dataset with user's selected scaler type
+    preprocessor = AdaptivePreprocessor(scaler_type=req.scaler_type)
+    dataset = CompliantDataset.from_dataframe(
+        session.raw_df, session.config, random_state=42, preprocessor=preprocessor
+    )
+    session.dataset = dataset
+
+    # Benchmark candidates
+    engine = ModelBenchmarkEngine(dataset=dataset, cv_folds=req.cv_folds, seed=42)
+    benchmark_res = engine.run_benchmark()
+    session.benchmark_result = benchmark_res
+    session.best_model = benchmark_res.best_model
+    session.candidate_models = getattr(benchmark_res, "fitted_models", {})
+
+    # Persist artifacts in session directory
+    session.best_model.save(session.base_dir / "best_surrogate.pkl")
+    with open(session.base_dir / "preprocessor.pkl", "wb") as f:
+        pickle.dump(dataset.preprocessor, f)
+    benchmark_res.to_json(session.base_dir / "leaderboard.json")
+
+    # Also persist to global models/artifacts and reports/
+    art_dir = Path("models/artifacts")
+    art_dir.mkdir(parents=True, exist_ok=True)
+    session.best_model.save(art_dir / "best_surrogate.pkl")
+    with open(art_dir / "preprocessor.pkl", "wb") as f:
+        pickle.dump(dataset.preprocessor, f)
+
+    rep_dir = Path("reports")
+    rep_dir.mkdir(parents=True, exist_ok=True)
+    benchmark_res.to_json(rep_dir / "leaderboard.json")
+
+    SESSION_STATE["benchmark_result"] = benchmark_res
+
+    # Build leaderboard summary
+    leaderboard = []
+    for rec in benchmark_res.records:
+        leaderboard.append({
+            "model": rec["model_name"],
+            "mean_r2": round(float(rec["test_r2_mean"]), 4),
+            "cv_r2": round(float(rec["cv_r2_mean"]), 4),
+            "rmse": round(float(rec["test_rmse_mean"]), 4),
+            "mae": round(float(rec["test_mae_mean"]), 4),
+            "latency_ms": round(float(rec["inference_latency_ms"]), 2),
+            "is_best": bool(rec["model_name"] == session.best_model.name),
+        })
+
+    # Prepare scatter data for best model on test partition
+    X_test_scaled, Y_test_scaled = dataset.get_test_data(scaled=True)
+    Y_pred_scaled = session.best_model.predict(X_test_scaled)
+    Y_pred_raw = dataset.preprocessor.inverse_transform_y(Y_pred_scaled)
+    Y_test_raw = dataset.Y_test_raw
+
+    # Primary output index (0)
+    target_idx = 0
+    scatter_data = {
+        "target_name": session.config.output_names[target_idx],
+        "actual": [round(float(v), 4) for v in Y_test_raw[:, target_idx]],
+        "predicted": [round(float(v), 4) for v in Y_pred_raw[:, target_idx]],
+    }
+
+    session.current_step = 2
+    session.next_step_unlocked = 3
+
+    return {
+        "status": "success",
+        "leaderboard": leaderboard,
+        "best_model": session.best_model.name,
+        "scatter_data": scatter_data,
+        "next_step_unlocked": 3,
+    }
+
+
+# ==============================================================================
+# 5. Wizard Step 3: Multi-Objective NSGA-II Optimization & TOPSIS
+# ==============================================================================
+
+@app.post("/api/wizard/step3-optimize")
+def wizard_step3_optimize(req: Step3Request):
+    """Step 3: Solve multi-objective problem using NSGA-II and determine knee-point via TOPSIS."""
+    session = SESSION_MANAGER.get_session(req.session_id)
+    if session is None or session.current_step < 2 or session.best_model is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Bước 2 chưa hoàn thành hoặc chưa có mô hình huấn luyện. Vui lòng chạy benchmark trước.",
+        )
+
+    # Determine surrogate model
+    surrogate = session.best_model
+    if req.selected_model and req.selected_model in session.candidate_models:
+        surrogate = session.candidate_models[req.selected_model]
+    session.selected_model = surrogate
+
+    # Build Pymoo problem
+    problem = CompliantMechanismProblem(
+        config=session.config,
+        surrogate_model=surrogate,
+        preprocessor=session.dataset.preprocessor,
+    )
+
+    # Solve via NSGA-II
+    solver = NSGA2Solver(
+        pop_size=req.pop_size,
+        n_generations=req.generations,
+        seed=42,
+    )
+    opt_res = solver.solve(problem)
+    session.optimization_result = opt_res
+
+    # MCDM TOPSIS selection
+    tradeoff = topsis_select_best_tradeoff(opt_res)
+    session.topsis_result = tradeoff
+
+    # Save artifacts to session workspace
+    opt_res.to_csv(str(session.base_dir / "pareto_front.csv"))
+    with open(session.base_dir / "best_configuration.json", "w", encoding="utf-8") as f:
+        json.dump(tradeoff, f, indent=2)
+
+    # Also save to global reports/
+    rep_dir = Path("reports")
+    rep_dir.mkdir(parents=True, exist_ok=True)
+    opt_res.to_csv(str(rep_dir / "pareto_front.csv"))
+    with open(rep_dir / "best_configuration.json", "w", encoding="utf-8") as f:
+        json.dump(tradeoff, f, indent=2)
+
+    SESSION_STATE["optimization_result"] = opt_res
+    SESSION_STATE["topsis_result"] = tradeoff
+
+    # Format pareto points with aliases
+    pareto_points = []
+    for i in range(opt_res.n_pareto):
+        pt = {
+            "design": [round(float(v), 4) for v in opt_res.X_pareto[i]],
+        }
+        for j, out_name in enumerate(session.config.output_names):
+            val = round(float(opt_res.Y_pareto[i, j]), 4)
+            pt[out_name] = val
+            # Standard aliases for charting convenience
+            if out_name == "output_displacement":
+                pt["F2_displacement"] = val
+            elif out_name == "resonant_frequency":
+                pt["f_frequency"] = val
+            elif out_name == "safety_factor":
+                pt["F1_safety"] = val
+        pareto_points.append(pt)
+
+    session.current_step = 3
+    session.next_step_unlocked = 4
+
+    return {
+        "status": "success",
+        "pareto_summary": {
+            "num_pareto_points": opt_res.n_pareto,
+            "execution_time_sec": round(opt_res.runtime_sec, 3),
+        },
+        "pareto_points": pareto_points,
+        "topsis_best_index": tradeoff["best_index"],
+        "next_step_unlocked": 4,
+    }
+
+
+# ==============================================================================
+# 6. Wizard Step 4: Summary Results & File Exports
+# ==============================================================================
+
+@app.get("/api/wizard/step4-results")
+def wizard_step4_results(session_id: str = Query(..., description="ID của phiên làm việc")):
+    """Step 4: Retrieve final optimal compromise design and accuracy summary."""
+    session = SESSION_MANAGER.get_session(session_id)
+    if session is None or session.current_step < 3 or session.topsis_result is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Bước 3 chưa hoàn thành hoặc chưa có kết quả tối ưu. Vui lòng chạy NSGA-II trước.",
+        )
+
+    model_used = session.selected_model or session.best_model
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "topology_name": session.config.topology.name,
+        "surrogate_model": model_used.name,
+        "recommended_design_inputs": session.topsis_result["recommended_design_inputs"],
+        "predicted_mechanical_responses": session.topsis_result["predicted_mechanical_responses"],
+        "topsis_score": session.topsis_result["topsis_score"],
+        "total_pareto_solutions": session.optimization_result.n_pareto,
+        "downloads": {
+            "pareto_csv": f"/api/wizard/download/pareto-csv?session_id={session_id}",
+            "best_design_json": f"/api/wizard/download/best-design-json?session_id={session_id}",
+            "model_pkl": f"/api/wizard/download/model-pkl?session_id={session_id}",
+        },
+    }
+
+
+@app.get("/api/wizard/download/pareto-csv")
+def wizard_download_pareto_csv(session_id: str = Query(...)):
+    """Download pareto_front.csv for the specified session."""
+    session = SESSION_MANAGER.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=400, detail="Phiên làm việc không tồn tại.")
+    path = session.base_dir / "pareto_front.csv"
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Tệp pareto_front.csv chưa được tạo. Vui lòng hoàn thành Bước 3.",
+        )
+    return FileResponse(str(path), media_type="text/csv", filename="pareto_front.csv")
+
+
+@app.get("/api/wizard/download/best-design-json")
+def wizard_download_best_design_json(session_id: str = Query(...)):
+    """Download best_configuration.json for the specified session."""
+    session = SESSION_MANAGER.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=400, detail="Phiên làm việc không tồn tại.")
+    path = session.base_dir / "best_configuration.json"
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Tệp best_configuration.json chưa được tạo. Vui lòng hoàn thành Bước 3.",
+        )
+    return FileResponse(str(path), media_type="application/json", filename="best_configuration.json")
+
+
+@app.get("/api/wizard/download/model-pkl")
+def wizard_download_model_pkl(session_id: str = Query(...)):
+    """Download best_surrogate.pkl for the specified session."""
+    session = SESSION_MANAGER.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=400, detail="Phiên làm việc không tồn tại.")
+    path = session.base_dir / "best_surrogate.pkl"
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Tệp best_surrogate.pkl chưa được tạo. Vui lòng hoàn thành Bước 2.",
+        )
+    return FileResponse(str(path), media_type="application/octet-stream", filename="best_surrogate.pkl")
+
+
+# ==============================================================================
+# 7. Legacy Endpoints (Maintained for Backward Compatibility)
+# ==============================================================================
 
 @app.get("/api/configs")
 def list_configs():
@@ -92,7 +578,6 @@ def generate_synthetic_dataset(
     generator = SyntheticCompliantGenerator(cfg, seed=42)
     df = generator.generate(n_samples=n_samples, noise_std=0.01)
 
-    # Instantiate dataset with preprocessor fitted on train set
     dataset = CompliantDataset.from_dataframe(df, cfg, random_state=42)
     SESSION_STATE["dataset"] = dataset
 
@@ -126,7 +611,6 @@ async def upload_dataset(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {e}")
 
-    # Validate schema
     missing_inputs = set(cfg.input_names) - set(df.columns)
     missing_outputs = set(cfg.output_names) - set(df.columns)
     if missing_inputs or missing_outputs:
@@ -173,14 +657,12 @@ def run_benchmark_endpoint(cv_folds: int = Form(3)):
     result = engine.run_benchmark(models=candidate_models)
     SESSION_STATE["benchmark_result"] = result
 
-    # Persist best model and preprocessor to disk
     art_dir = Path("models/artifacts")
     art_dir.mkdir(parents=True, exist_ok=True)
     result.best_model.save(art_dir / "best_surrogate.pkl")
     with open(art_dir / "preprocessor.pkl", "wb") as f:
         pickle.dump(dataset.preprocessor, f)
 
-    # Save reports
     rep_dir = Path("reports")
     rep_dir.mkdir(parents=True, exist_ok=True)
     result.to_json(rep_dir / "leaderboard.json")
@@ -202,7 +684,6 @@ def run_optimization_endpoint(
     cfg = SESSION_STATE.get("config") or load_topology_config("configs/bridge_amplifier.yaml")
     benchmark_res = SESSION_STATE.get("benchmark_result")
 
-    # Load or reuse best model and preprocessor
     if benchmark_res is not None:
         surrogate = benchmark_res.best_model
         preprocessor = SESSION_STATE["dataset"].preprocessor
@@ -210,7 +691,6 @@ def run_optimization_endpoint(
         model_path = Path("models/artifacts/best_surrogate.pkl")
         prep_path = Path("models/artifacts/preprocessor.pkl")
         if not model_path.is_file() or not prep_path.is_file():
-            # Run quick benchmark first
             run_benchmark_endpoint(cv_folds=2)
         with open("models/artifacts/best_surrogate.pkl", "rb") as f:
             surrogate = pickle.load(f)
@@ -227,20 +707,17 @@ def run_optimization_endpoint(
     opt_res = solver.solve(problem)
     SESSION_STATE["optimization_result"] = opt_res
 
-    # Save pareto front CSV
     rep_dir = Path("reports")
     rep_dir.mkdir(parents=True, exist_ok=True)
     pareto_csv_path = rep_dir / "pareto_front.csv"
     opt_res.to_csv(str(pareto_csv_path))
 
-    # Run TOPSIS
     tradeoff = topsis_select_best_tradeoff(opt_res)
     SESSION_STATE["topsis_result"] = tradeoff
 
     with open(rep_dir / "best_configuration.json", "w", encoding="utf-8") as f:
         json.dump(tradeoff, f, indent=2)
 
-    # Format Pareto front for plotting (F2 vs f)
     pareto_df = opt_res.to_dataframe()
     scatter_points = []
     for _, row in pareto_df.iterrows():
@@ -290,386 +767,15 @@ def download_model():
     return FileResponse(str(path), media_type="application/octet-stream", filename="best_surrogate.pkl")
 
 
+# ==============================================================================
+# 8. Main Dashboard Root Endpoint
+# ==============================================================================
+
 @app.get("/", response_class=HTMLResponse)
 def index_page():
     """Serve the single-page responsive AutoCompliant-ML dashboard UI."""
-    return HTML_DASHBOARD_TEMPLATE
-
-
-# Embedded Single Page Application HTML/CSS/JS Template
-HTML_DASHBOARD_TEMPLATE = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AutoCompliant-ML | Compliant Mechanism Pipeline</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --card-border: #334155;
-      --primary: #38bdf8;
-      --primary-hover: #0284c7;
-      --accent: #f59e0b;
-      --success: #10b981;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    body { background-color: var(--bg); color: var(--text); display: flex; flex-direction: column; min-height: 100vh; }
-    header { background: #0f172a; border-bottom: 1px solid var(--card-border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; }
-    .logo { font-size: 1.25rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 0.5rem; }
-    .badge { background: #0369a1; color: #e0f2fe; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-    .container { display: grid; grid-template-columns: 360px 1fr; gap: 1.5rem; padding: 1.5rem; flex: 1; }
-    .panel { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 0.75rem; padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
-    .panel-title { font-size: 1rem; font-weight: 600; border-bottom: 1px solid var(--card-border); padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; }
-    .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-    label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-    select, input, button { background: #0f172a; border: 1px solid var(--card-border); color: var(--text); padding: 0.6rem 0.8rem; border-radius: 0.375rem; font-size: 0.9rem; }
-    select:focus, input:focus { outline: none; border-color: var(--primary); }
-    .btn { background: var(--primary); color: #0f172a; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; text-align: center; }
-    .btn:hover { background: var(--primary-hover); }
-    .btn-secondary { background: transparent; border: 1px solid var(--card-border); color: var(--text); }
-    .btn-secondary:hover { background: #334155; }
-    .btn-success { background: var(--success); color: #0f172a; }
-    .btn-success:hover { background: #059669; }
-    .tabs { display: flex; gap: 0.5rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.5rem; }
-    .tab-btn { background: transparent; border: none; color: var(--text-muted); padding: 0.5rem 1rem; border-radius: 0.375rem; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
-    .tab-btn.active { background: #334155; color: var(--primary); }
-    .tab-content { display: none; }
-    .tab-content.active { display: flex; flex-direction: column; gap: 1.25rem; }
-    .table-container { overflow-x: auto; max-height: 280px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left; }
-    th { background: #0f172a; padding: 0.6rem; color: var(--text-muted); border-bottom: 1px solid var(--card-border); position: sticky; top: 0; }
-    td { padding: 0.55rem; border-bottom: 1px solid var(--card-border); }
-    tr:hover { background: #33415522; }
-    .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
-    .metric-card { background: #0f172a; border: 1px solid var(--card-border); padding: 1rem; border-radius: 0.5rem; text-align: center; }
-    .metric-value { font-size: 1.5rem; font-weight: 700; color: var(--primary); margin-top: 0.25rem; }
-    .status-log { background: #000; border: 1px solid #1e293b; padding: 0.75rem; border-radius: 0.375rem; font-family: monospace; font-size: 0.8rem; color: #10b981; max-height: 80px; overflow-y: auto; }
-    .chart-box { position: relative; height: 350px; background: #0f172a; border-radius: 0.5rem; padding: 1rem; border: 1px solid var(--card-border); }
-    .download-bar { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.5rem; }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="logo">
-      <span>⚙️ AutoCompliant-ML</span>
-      <span class="badge">Pipeline v1.0</span>
-    </div>
-    <div style="font-size: 0.85rem; color: var(--text-muted);">
-      Compliant Mechanism Config-Driven AI & NSGA-II Studio
-    </div>
-  </header>
-
-  <div class="container">
-    <!-- Sidebar Controls -->
-    <div class="panel">
-      <div class="panel-title">
-        <span>1. Topology & Data</span>
-      </div>
-
-      <div class="form-group">
-        <label>Topology Config</label>
-        <select id="configSelect"></select>
-      </div>
-
-      <div class="form-group">
-        <label>Generate Synthetic FEA Data</label>
-        <div style="display: flex; gap: 0.5rem;">
-          <input type="number" id="sampleCount" value="300" min="50" max="2000" style="width: 100px;">
-          <button class="btn" style="flex:1;" onclick="generateData()">Generate</button>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Or Upload FEA CSV</label>
-        <input type="file" id="fileUpload" accept=".csv" onchange="uploadData()">
-      </div>
-
-      <div class="panel-title" style="margin-top: 0.5rem;">
-        <span>2. Processing Engine</span>
-      </div>
-
-      <button class="btn btn-secondary" onclick="runBenchmark()">🚀 Run Model Zoo Benchmark</button>
-
-      <div class="form-group">
-        <label>NSGA-II Pop / Gen</label>
-        <div style="display: flex; gap: 0.5rem;">
-          <input type="number" id="popSize" value="80" style="width: 50%;">
-          <input type="number" id="genCount" value="50" style="width: 50%;">
-        </div>
-      </div>
-
-      <button class="btn btn-success" onclick="runOptimization()">🎯 Run NSGA-II & TOPSIS</button>
-
-      <div class="form-group">
-        <label>System Live Log</label>
-        <div class="status-log" id="statusLog">> System ready. Select topology or generate data.</div>
-      </div>
-    </div>
-
-    <!-- Main Display -->
-    <div class="panel">
-      <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('tab-data')">📊 Dataset Preview</button>
-        <button class="tab-btn" onclick="switchTab('tab-bench')">🏆 Model Leaderboard</button>
-        <button class="tab-btn" onclick="switchTab('tab-pareto')">📈 Pareto Front & Decision</button>
-      </div>
-
-      <!-- Tab 1: Dataset Preview -->
-      <div id="tab-data" class="tab-content active">
-        <div class="card-grid" id="dataStats">
-          <div class="metric-card"><label>Topology</label><div class="metric-value" id="statTopology">-</div></div>
-          <div class="metric-card"><label>Samples</label><div class="metric-value" id="statSamples">0</div></div>
-          <div class="metric-card"><label>Inputs (Din)</label><div class="metric-value" id="statDin">0</div></div>
-          <div class="metric-card"><label>Responses (Dout)</label><div class="metric-value" id="statDout">0</div></div>
-        </div>
-        <div class="table-container">
-          <table id="previewTable">
-            <thead><tr id="previewHead"><th>No dataset loaded</th></tr></thead>
-            <tbody id="previewBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Tab 2: Benchmark Leaderboard -->
-      <div id="tab-bench" class="tab-content">
-        <div class="metric-card" style="text-align: left; padding: 0.75rem 1rem;">
-          <label>Optimal Surrogate Model Selected:</label>
-          <span id="bestModelBadge" style="font-size: 1.1rem; font-weight: 700; color: var(--primary); margin-left: 0.5rem;">None</span>
-        </div>
-        <div class="table-container">
-          <table id="benchTable">
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Model</th>
-                <th>Test R²</th>
-                <th>CV R²</th>
-                <th>RMSE</th>
-                <th>MAE</th>
-                <th>Latency (ms/1k)</th>
-              </tr>
-            </thead>
-            <tbody id="benchBody"><tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Run benchmark to view leaderboard</td></tr></tbody>
-          </table>
-        </div>
-        <div class="download-bar">
-          <a class="btn btn-secondary" href="/api/download/model" target="_blank">⬇️ Download best_surrogate.pkl</a>
-        </div>
-      </div>
-
-      <!-- Tab 3: Pareto Frontier & MCDM -->
-      <div id="tab-pareto" class="tab-content">
-        <div class="chart-box">
-          <canvas id="paretoChart"></canvas>
-        </div>
-        <div class="panel-title"><span>🏆 TOPSIS Optimal Compromise Design (Knee-Point)</span></div>
-        <div class="card-grid" id="tradeoffCards"></div>
-        <div class="download-bar">
-          <a class="btn btn-secondary" href="/api/download/pareto" target="_blank">⬇️ Download pareto_front.csv</a>
-          <a class="btn btn-secondary" href="/api/download/best-config" target="_blank">⬇️ Download best_configuration.json</a>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    let myChart = null;
-
-    function log(msg) {
-      const box = document.getElementById('statusLog');
-      box.innerHTML += '<br>> ' + msg;
-      box.scrollTop = box.scrollHeight;
-    }
-
-    function switchTab(tabId) {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      event.target.classList.add('active');
-      document.getElementById(tabId).classList.add('active');
-    }
-
-    async function initConfigs() {
-      try {
-        const res = await fetch('/api/configs');
-        const data = await res.json();
-        const sel = document.getElementById('configSelect');
-        sel.innerHTML = '';
-        data.configs.forEach(c => {
-          const opt = document.createElement('option');
-          opt.value = c;
-          opt.innerText = c;
-          sel.appendChild(opt);
-        });
-        if (data.configs.length > 0) loadConfigDetails(data.configs[0]);
-      } catch (e) { log('Error fetching configs: ' + e); }
-    }
-
-    async function loadConfigDetails(filename) {
-      const res = await fetch('/api/configs/' + filename);
-      const data = await res.json();
-      document.getElementById('statTopology').innerText = data.name;
-      document.getElementById('statDin').innerText = data.D_in;
-      document.getElementById('statDout').innerText = data.D_out;
-      log('Loaded config ' + filename + ' (Din=' + data.D_in + ', Dout=' + data.D_out + ')');
-    }
-
-    document.getElementById('configSelect').addEventListener('change', (e) => loadConfigDetails(e.target.value));
-
-    async function generateData() {
-      const cfg = document.getElementById('configSelect').value;
-      const count = document.getElementById('sampleCount').value;
-      log('Generating ' + count + ' synthetic samples...');
-      const form = new FormData();
-      form.append('config_file', cfg);
-      form.append('n_samples', count);
-
-      const res = await fetch('/api/dataset/generate', { method: 'POST', body: form });
-      const data = await res.json();
-      renderTable(data);
-      log('Generated ' + data.n_samples + ' samples successfully.');
-    }
-
-    async function uploadData() {
-      const input = document.getElementById('fileUpload');
-      if (!input.files[0]) return;
-      const cfg = document.getElementById('configSelect').value;
-      log('Uploading ' + input.files[0].name + '...');
-      const form = new FormData();
-      form.append('file', input.files[0]);
-      form.append('config_file', cfg);
-
-      const res = await fetch('/api/dataset/upload', { method: 'POST', body: form });
-      const data = await res.json();
-      if (!res.ok) {
-        log('Upload error: ' + JSON.stringify(data.detail));
-        return;
-      }
-      renderTable(data);
-      log('Uploaded and validated ' + data.n_samples + ' samples.');
-    }
-
-    function renderTable(data) {
-      document.getElementById('statSamples').innerText = data.n_samples;
-      const head = document.getElementById('previewHead');
-      head.innerHTML = data.columns.map(c => '<th>' + c + '</th>').join('');
-      const body = document.getElementById('previewBody');
-      body.innerHTML = data.preview.map(row => {
-        return '<tr>' + data.columns.map(c => '<td>' + (typeof row[c] === 'number' ? row[c].toFixed(3) : row[c]) + '</td>').join('') + '</tr>';
-      }).join('');
-    }
-
-    async function runBenchmark() {
-      log('Running Model Zoo comparative benchmark...');
-      const form = new FormData();
-      form.append('cv_folds', 3);
-      const res = await fetch('/api/benchmark', { method: 'POST', body: form });
-      const data = await res.json();
-
-      document.getElementById('bestModelBadge').innerText = data.best_model_name;
-      const body = document.getElementById('benchBody');
-      body.innerHTML = data.leaderboard.map(rec => {
-        return '<tr>' +
-          '<td><b>#' + rec.rank + '</b></td>' +
-          '<td>' + rec.model_name + '</td>' +
-          '<td>' + rec.test_r2_mean.toFixed(4) + '</td>' +
-          '<td>' + rec.cv_r2_mean.toFixed(4) + '</td>' +
-          '<td>' + rec.test_rmse_mean.toFixed(4) + '</td>' +
-          '<td>' + rec.test_mae_mean.toFixed(4) + '</td>' +
-          '<td>' + rec.inference_latency_ms.toFixed(2) + ' ms</td>' +
-        '</tr>';
-      }).join('');
-      log('Benchmark finished! Best Model: ' + data.best_model_name);
-      document.querySelectorAll('.tab-btn')[1].click();
-    }
-
-    async function runOptimization() {
-      const pop = document.getElementById('popSize').value;
-      const gen = document.getElementById('genCount').value;
-      log('Executing NSGA-II (Pop: ' + pop + ', Gen: ' + gen + ')...');
-      const form = new FormData();
-      form.append('pop_size', pop);
-      form.append('generations', gen);
-
-      const res = await fetch('/api/optimize', { method: 'POST', body: form });
-      const data = await res.json();
-
-      log('Optimization completed in ' + data.runtime_sec.toFixed(3) + 's! Discovered ' + data.n_pareto + ' Pareto solutions.');
-      renderParetoChart(data.scatter_points, data.knee_point);
-      renderTradeoff(data.tradeoff);
-      document.querySelectorAll('.tab-btn')[2].click();
-    }
-
-    function renderParetoChart(points, knee) {
-      const ctx = document.getElementById('paretoChart').getContext('2d');
-      if (myChart) myChart.destroy();
-
-      const scatterData = points.map(p => ({ x: p.displacement, y: p.frequency }));
-      const kneeData = [{ x: knee.displacement, y: knee.frequency }];
-
-      myChart = new Chart(ctx, {
-        type: 'scatter',
-        data: {
-          datasets: [
-            {
-              label: 'Non-dominated Pareto Front',
-              data: scatterData,
-              backgroundColor: '#38bdf8',
-              borderColor: '#0284c7',
-              pointRadius: 4,
-            },
-            {
-              label: '⭐ TOPSIS Knee-Point',
-              data: kneeData,
-              backgroundColor: '#f59e0b',
-              borderColor: '#ffffff',
-              borderWidth: 2,
-              pointRadius: 9,
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            x: {
-              title: { display: true, text: 'Max Output Displacement Δout (µm)', color: '#94a3b8' },
-              grid: { color: '#33415544' },
-              ticks: { color: '#f8fafc' }
-            },
-            y: {
-              title: { display: true, text: 'Resonant Frequency f1 (Hz)', color: '#94a3b8' },
-              grid: { color: '#33415544' },
-              ticks: { color: '#f8fafc' }
-            }
-          },
-          plugins: {
-            legend: { labels: { color: '#f8fafc' } }
-          }
-        }
-      });
-    }
-
-    function renderTradeoff(tradeoff) {
-      const box = document.getElementById('tradeoffCards');
-      let html = '';
-      for (const [k, v] of Object.entries(tradeoff.recommended_design_inputs)) {
-        html += '<div class="metric-card"><label>' + k + '</label><div class="metric-value" style="font-size:1.15rem;">' + v.toFixed(3) + '</div></div>';
-      }
-      for (const [k, v] of Object.entries(tradeoff.predicted_mechanical_responses)) {
-        html += '<div class="metric-card" style="border-color:#38bdf8;"><label style="color:#38bdf8;">' + k + '</label><div class="metric-value" style="color:#10b981;font-size:1.15rem;">' + v.toFixed(3) + '</div></div>';
-      }
-      box.innerHTML = html;
-    }
-
-    window.onload = () => {
-      initConfigs();
-      generateData();
-    };
-  </script>
-</body>
-</html>
-"""
+    template_path = Path(__file__).parent / "templates" / "index.html"
+    if template_path.is_file():
+        with open(template_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return "<h1>AutoCompliant-ML Stepper Wizard</h1>"

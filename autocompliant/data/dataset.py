@@ -44,6 +44,7 @@ class CompliantDataset:
         config: TopologyConfig,
         test_size: Optional[float] = None,
         random_state: Optional[int] = None,
+        preprocessor: Optional[AdaptivePreprocessor] = None,
     ) -> "CompliantDataset":
         """Instantiate dataset from a pandas DataFrame according to topology schema."""
         test_sz = test_size if test_size is not None else config.surrogate.test_size
@@ -65,7 +66,7 @@ class CompliantDataset:
             X, Y, test_size=test_sz, random_state=rnd
         )
 
-        return cls(X_train, X_test, Y_train, Y_test, config=config)
+        return cls(X_train, X_test, Y_train, Y_test, config=config, preprocessor=preprocessor)
 
     @classmethod
     def from_csv(

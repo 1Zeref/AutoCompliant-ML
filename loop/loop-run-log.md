@@ -67,4 +67,27 @@ Nhật ký ghi lại chi tiết các chu kỳ chạy thực tế của AutoCompl
   1. `pytest tests/test_web.py -v`: **6/6 PASSED (100%)**
   2. Toàn bộ test suite tích lũy `pytest tests/`: **25/25 PASSED (100%)**
   3. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
-- **Status**: 🏁 **ALL 6 LOOPS COMPLETED SUCCESSFULLY! SYSTEM END-TO-END VERIFIED.**
+- **Status**: PASSED
+
+### [2026-10-05 19:50:00] Cycle #008 - WebUI Guided Stepper Wizard via FastAPI REST Architecture
+- **Actions Completed**:
+  - Triển khai kiến trúc **Session-based State Machine** và `SessionManager` tại [autocompliant/web/app.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/app.py) lưu trữ tại `artifacts/sessions/{session_id}`.
+  - Thiết lập cơ chế **Server-side Enforced Gate**: Kiểm tra nghiêm ngặt tính hoàn thiện của Bước $N-1$ trước khi cấp phép thực thi Bước $N$, trả về HTTP 400 và thông báo tiếng Việt trực quan.
+  - Xây dựng trọn bộ REST API Stepper:
+    - `GET /api/topologies`: Trả về schema chi tiết các topology, cận hình học, mục tiêu và ràng buộc.
+    - `POST /api/wizard/step1-data`: Khởi tạo session, nạp synthetic hoặc file CSV/Parquet, kiểm tra schema, NaN/Null, kiểu số.
+    - `POST /api/wizard/step2-train`: K-Fold Cross-Validation, so chuẩn 6 mô hình Model Zoo, trích xuất best surrogate model và dữ liệu biểu đồ phân tán Actual vs Predicted.
+    - `POST /api/wizard/step3-optimize`: Chạy bài toán tối ưu đa mục tiêu NSGA-II, lọc mặt trước Pareto và xác định điểm thỏa hiệp tối ưu TOPSIS Knee-point.
+    - `GET /api/wizard/step4-results`: Bảng tổng kết cấu hình tối ưu và đường dẫn tải tệp.
+    - Bộ tải tệp: `/api/wizard/download/pareto-csv`, `/api/wizard/download/best-design-json`, `/api/wizard/download/model-pkl`.
+  - Xây dựng giao diện Frontend Single-Page Stepper Wizard hiện đại tại [autocompliant/web/templates/index.html](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/templates/index.html) (Tailwind CSS + Plotly.js + Chart.js):
+    - Stepper Navigation Bar 4 bước với trạng thái khóa/mở tự động.
+    - Biểu đồ phân tán 2D tương tác Plotly.js ($F_2$ vs $f$, màu sắc theo $F_1$, tooltip chi tiết, ngôi sao ⭐ TOPSIS Knee-point).
+    - Biểu đồ Actual vs Predicted scatter plot kiểm định mô hình tốt nhất.
+    - Spinner / Loading Banner với ước tính thời gian thực thi.
+  - Viết bộ test tự động nâng cao [tests/test_web.py](file:///d:/CODE/AutoCompliant-ML/tests/test_web.py) với 13 bài test kiểm thử toàn diện cả luồng tuần tự và các kịch bản nhảy cóc, thiếu cột dữ liệu.
+- **Gate Verification Results**:
+  1. `pytest tests/test_web.py -v`: **13/13 PASSED (100%)**
+  2. Toàn bộ test suite tích lũy `pytest tests/`: **32/32 PASSED (100%)**
+  3. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
+- **Status**: 🏁 **GUIDED STEPPER WIZARD FULLY OPERATIONAL & VERIFIED.**

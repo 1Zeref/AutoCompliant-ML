@@ -41,10 +41,27 @@
 - Tích hợp launcher: `python web_app.py --port 8000`.
 - **Gate 6**: `pytest tests/test_web.py -v` $\rightarrow$ **6/6 PASSED (100%)**.
 
+### ✅ Loop 7: WebUI Guided Stepper Wizard (Cycle #008) - COMPLETED
+- Nâng cấp kiến trúc WebUI theo nguyên tắc **Session-based State Machine**:
+  - `SessionManager` lưu cache phiên làm việc độc lập trong bộ nhớ và thư mục `artifacts/sessions/{session_id}`.
+  - Rào chắn bảo vệ phía máy chủ (Server-side Enforced Gate): Chặn các request nhảy cóc khi bước trước chưa hoàn thành (HTTP 400 kèm thông báo tiếng Việt chi tiết).
+  - Khởi tạo API RESTful dạng Stepper 4 bước:
+    - `GET /api/topologies`: Trả về schema chi tiết các topology, cận hình học, mục tiêu và ràng buộc.
+    - `POST /api/wizard/step1-data`: Khởi tạo session, nạp synthetic hoặc file CSV/Parquet, kiểm tra schema, NaN/Null, kiểu số.
+    - `POST /api/wizard/step2-train`: K-Fold Cross-Validation, so chuẩn 6 mô hình Model Zoo, trích xuất best surrogate model và dữ liệu biểu đồ phân tán Actual vs Predicted.
+    - `POST /api/wizard/step3-optimize`: Chạy bài toán tối ưu đa mục tiêu NSGA-II, lọc mặt trước Pareto và xác định điểm thỏa hiệp tối ưu TOPSIS Knee-point.
+    - `GET /api/wizard/step4-results`: Bảng tổng kết cấu hình tối ưu và đường dẫn tải tệp.
+    - Bộ tải tệp: `/api/wizard/download/pareto-csv`, `/api/wizard/download/best-design-json`, `/api/wizard/download/model-pkl`.
+  - Frontend Single-Page Application (HTML5 + Tailwind CSS + Plotly.js + Chart.js) tại [autocompliant/web/templates/index.html](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/templates/index.html):
+    - Thanh tiến trình Stepper 4 bước với cơ chế khóa bước chưa mở.
+    - Biểu đồ phân tán 2D tương tác Plotly.js ($F_2$ vs $f$, tô màu theo $F_1$, gắn nhãn tooltip) và ngôi sao vàng tại điểm TOPSIS Knee-point.
+    - Spinner / Loading Banner kèm thông báo trạng thái tức thời.
+- **Gate 7**: `pytest tests/test_web.py -v` $\rightarrow$ **13/13 PASSED (100%)**, toàn bộ test suite `pytest tests/ -v` $\rightarrow$ **32/32 PASSED (100%)**.
+
 ---
 
 ## Cumulative Verification Status
-- **Total Test Cases**: 25/25 PASSED (100%).
+- **Total Test Cases**: 32/32 PASSED (100%).
 - **Policy Gatekeeper (`loop-gate`)**: 100% Policy Compliant (`ALLOWED [ok]`).
 - **Optimal Mechanical Design Discovered**:
   - Hinge Thickness $t = 0.3678\text{ mm}$

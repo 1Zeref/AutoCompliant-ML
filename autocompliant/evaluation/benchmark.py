@@ -29,10 +29,12 @@ class BenchmarkResult:
         records: List[Dict[str, Any]],
         best_model: BaseSurrogateModel,
         output_symbols: List[str],
+        fitted_models: Optional[Dict[str, BaseSurrogateModel]] = None,
     ):
         self.records = records
         self.best_model = best_model
         self.output_symbols = output_symbols
+        self.fitted_models = fitted_models or {}
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert benchmark records into a formatted pandas DataFrame."""
@@ -195,4 +197,5 @@ class ModelBenchmarkEngine:
             records=records,
             best_model=best_model,
             output_symbols=self.config.output_symbols,
+            fitted_models=fitted_models,
         )

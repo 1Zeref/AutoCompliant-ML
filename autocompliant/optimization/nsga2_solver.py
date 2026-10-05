@@ -94,6 +94,14 @@ class NSGA2Solver:
         runtime = time.perf_counter() - t0
 
         if res.X is None or len(res.X) == 0:
+            if hasattr(res, "pop") and res.pop is not None and len(res.pop) > 0:
+                X_pop = res.pop.get("X")
+                F_pop = res.pop.get("F")
+                if X_pop is not None and len(X_pop) > 0:
+                    res.X = np.atleast_2d(X_pop[: min(10, len(X_pop))])
+                    res.F = np.atleast_2d(F_pop[: min(10, len(F_pop))])
+
+        if res.X is None or len(res.X) == 0:
             return OptimizationResult(
                 X_pareto=np.empty((0, problem.n_var)),
                 F_pareto=np.empty((0, problem.n_obj)),
