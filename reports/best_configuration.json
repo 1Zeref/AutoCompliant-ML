@@ -2,23 +2,23 @@
   "best_index": 0,
   "topsis_score": 0.0,
   "recommended_design_inputs": {
-    "A (mm)": 0.84253443971787,
-    "B (mm)": 0.7408393237333573,
-    "C (mm)": 0.6004457521754101,
-    "D (mm)": 0.6495888966576929,
-    "E (mm)": 47.98632672705034
+    "A (mm)": 0.8678119403471009,
+    "B (mm)": 0.723725215394146,
+    "C (mm)": 0.6347402057701067,
+    "D (mm)": 0.6266992604045252,
+    "E (mm)": 51.6832181089233
   },
   "predicted_mechanical_responses": {
-    "Stroke (\u00b5m)": 1326.32985,
-    "Safety factor": 1.79401
+    "Stroke (\u00b5m)": 1351.6489,
+    "Safety factor": 1.91446
   },
-  "total_pareto_solutions": 400,
+  "total_pareto_solutions": 80,
   "extrapolation_risk": {
-    "max_z_score": 3.48,
-    "mean_z_score": 1.605,
-    "confidence_percentage": 24.9,
-    "confidence_level": "High Extrapolation Risk",
-    "confidence_level_vi": "Nguy c\u01a1 ngo\u1ea1i suy cao (Ngo\u00e0i v\u00f9ng hu\u1ea5n luy\u1ec7n)",
-    "risk_color": "rose"
+    "max_z_score": 2.014,
+    "mean_z_score": 1.171,
+    "confidence_percentage": 44.7,
+    "confidence_level": "Moderate Confidence",
+    "confidence_level_vi": "\u0110\u1ed9 tin c\u1eady trung b\u00ecnh (G\u1ea7n bi\u00ean d\u1eef li\u1ec7u)",
+    "risk_color": "amber"
   }
 }
