@@ -20,10 +20,14 @@ class CompliantMechanismProblem(Problem):
         config: TopologyConfig,
         surrogate_model: BaseSurrogateModel,
         preprocessor: AdaptivePreprocessor,
+        use_uncertainty_penalty: bool = False,
+        beta: float = 1.0,
     ):
         self.config = config
         self.surrogate_model = surrogate_model
         self.preprocessor = preprocessor
+        self.use_uncertainty_penalty = use_uncertainty_penalty
+        self.beta = float(beta)
 
         lower_bounds, upper_bounds = config.bounds
         n_var = config.D_in
@@ -67,21 +71,42 @@ class CompliantMechanismProblem(Problem):
         # 1. Transform inputs into surrogate model feature space
         X_scaled = self.preprocessor.transform_x(X)
 
-        # 2. Ultra-fast batch inference (< 10 ms for 100 individuals)
-        Y_scaled = self.surrogate_model.predict(X_scaled)
+        # 2. Batch inference with optional uncertainty quantification
+        if self.use_uncertainty_penalty:
+            Y_scaled, std_scaled = self.surrogate_model.predict_with_uncertainty(X_scaled)
+        else:
+            Y_scaled = self.surrogate_model.predict(X_scaled)
+            std_scaled = None
 
-        # 3. Inverse transform into physical mechanical units
+        # 3. Inverse transform mean into physical mechanical units
         Y = self.preprocessor.inverse_transform_y(Y_scaled)
 
+        # Compute physical uncertainty std if available
+        # Note: scale factor can be approximated using preprocessor scale_
+        std_physical = None
+        if std_scaled is not None and hasattr(self.preprocessor.scaler_y, "scale_"):
+            scales = getattr(self.preprocessor.scaler_y, "scale_", None)
+            if scales is not None:
+                std_physical = std_scaled * scales
+            else:
+                std_physical = std_scaled
+        elif std_scaled is not None:
+            std_physical = std_scaled
+
         # 4. Formulate objective functions (pymoo minimizes all objectives)
-        # To maximize F_j: minimize -F_j
+        # To maximize F_j: minimize - (mu_j - beta * sigma_j)
+        # To minimize F_j: minimize (mu_j + beta * sigma_j)
         F_list = []
         for idx, direction in self.obj_indices:
             values = Y[:, idx]
+            penalty = (self.beta * std_physical[:, idx]) if (std_physical is not None and self.use_uncertainty_penalty) else 0.0
+
             if direction == "maximize":
-                F_list.append(-values)
+                # Robust objective: maximize (values - penalty) => minimize -(values - penalty)
+                F_list.append(-(values - penalty))
             else:
-                F_list.append(values)
+                # Robust objective: minimize (values + penalty) => minimize (values + penalty)
+                F_list.append(values + penalty)
         out["F"] = np.column_stack(F_list)
 
         # 5. Formulate inequality constraints g(x) <= 0
@@ -89,14 +114,19 @@ class CompliantMechanismProblem(Problem):
             G_list = []
             for idx, bound_type, threshold in self.constraints:
                 values = Y[:, idx]
+                sigma = std_physical[:, idx] if (std_physical is not None and self.use_uncertainty_penalty) else 0.0
+
                 if bound_type == "min":
-                    # Y >= threshold  <=>  threshold - Y <= 0
-                    g = threshold - values
+                    # Conservative constraint: (values - beta * sigma) >= threshold
+                    # <=> threshold - (values - beta * sigma) <= 0
+                    g = threshold - (values - self.beta * sigma)
                 else:
-                    # Y <= threshold  <=>  Y - threshold <= 0
-                    g = values - threshold
+                    # Conservative constraint: (values + beta * sigma) <= threshold
+                    # <=> (values + beta * sigma) - threshold <= 0
+                    g = (values + self.beta * sigma) - threshold
                 G_list.append(g)
             out["G"] = np.column_stack(G_list)
 
         # Attach physical responses for downstream Pareto analysis
         out["Y_physical"] = Y
+

@@ -5,6 +5,7 @@ from autocompliant.models.gpr_model import MultiOutputGPR
 from autocompliant.models.gbm_model import XGBoostSurrogate, LightGBMSurrogate, RandomForestSurrogate
 from autocompliant.models.dnn_model import AdaptiveMLPSurrogate
 from autocompliant.models.baseline_models import PolynomialRSMSurrogate
+from autocompliant.models.ensemble_model import WeightedEnsembleSurrogate
 
 __all__ = [
     "BaseSurrogateModel",
@@ -14,4 +15,5 @@ __all__ = [
     "RandomForestSurrogate",
     "AdaptiveMLPSurrogate",
     "PolynomialRSMSurrogate",
+    "WeightedEnsembleSurrogate",
 ]

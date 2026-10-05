@@ -1,17 +1,24 @@
 {
   "best_index": 0,
-  "topsis_score": 0.7801166110135622,
+  "topsis_score": 0.0,
   "recommended_design_inputs": {
-    "hinge_thickness_t": 0.34586813353347784,
-    "hinge_width_w": 14.969774814765369,
-    "arm_length_l": 35.189009416921145,
-    "bridge_angle_theta": 9.612301004228929,
-    "hinge_fillet_r": 2.1734414402047997
+    "A (mm)": 0.84253443971787,
+    "B (mm)": 0.7408393237333573,
+    "C (mm)": 0.6004457521754101,
+    "D (mm)": 0.6495888966576929,
+    "E (mm)": 47.98632672705034
   },
   "predicted_mechanical_responses": {
-    "safety_factor": 1.5536855498211697,
-    "output_displacement": 58.52691038411332,
-    "resonant_frequency": 761.9458582686402
+    "Stroke (\u00b5m)": 1326.32985,
+    "Safety factor": 1.79401
   },
-  "total_pareto_solutions": 2
+  "total_pareto_solutions": 400,
+  "extrapolation_risk": {
+    "max_z_score": 3.48,
+    "mean_z_score": 1.605,
+    "confidence_percentage": 24.9,
+    "confidence_level": "High Extrapolation Risk",
+    "confidence_level_vi": "Nguy c\u01a1 ngo\u1ea1i suy cao (Ngo\u00e0i v\u00f9ng hu\u1ea5n luy\u1ec7n)",
+    "risk_color": "rose"
+  }
 }

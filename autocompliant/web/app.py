@@ -23,12 +23,12 @@ from autocompliant.config.schema import (
     OptimizationConfig,
 )
 from autocompliant.data.dataset import CompliantDataset
-from autocompliant.data.preprocessor import AdaptivePreprocessor
+from autocompliant.data.preprocessor import AdaptivePreprocessor, filter_outliers
 from autocompliant.data.synthetic_generator import SyntheticCompliantGenerator
 from autocompliant.evaluation.benchmark import ModelBenchmarkEngine, BenchmarkResult
 from autocompliant.optimization.problem import CompliantMechanismProblem
 from autocompliant.optimization.nsga2_solver import NSGA2Solver, OptimizationResult
-from autocompliant.optimization.mcdm import topsis_select_best_tradeoff
+from autocompliant.optimization.mcdm import topsis_select_best_tradeoff, calculate_extrapolation_risk
 from autocompliant.models.base import BaseSurrogateModel
 from autocompliant.models import (
     PolynomialRSMSurrogate,
@@ -37,6 +37,7 @@ from autocompliant.models import (
     LightGBMSurrogate,
     AdaptiveMLPSurrogate,
     MultiOutputGPR,
+    WeightedEnsembleSurrogate,
 )
 
 app = FastAPI(
@@ -90,6 +91,12 @@ class Step3Request(BaseModel):
     generations: int = Field(default=50, ge=10, le=500, description="Số thế hệ tiến hóa")
     selected_model: Optional[str] = Field(
         default=None, description="Tên mô hình surrogate muốn sử dụng (mặc định: best model)"
+    )
+    use_uncertainty_penalty: bool = Field(
+        default=False, description="Bật rào chắn phạt độ bất định (Uncertainty-Aware Penalty)"
+    )
+    beta: float = Field(
+        default=1.0, ge=0.0, le=5.0, description="Hệ số phạt độ bất định beta (Lower Confidence Bound)"
     )
 
 
@@ -606,11 +613,13 @@ def wizard_step3_optimize(req: Step3Request):
         surrogate = session.candidate_models[req.selected_model]
     session.selected_model = surrogate
 
-    # Build Pymoo problem
+    # Build Pymoo problem with uncertainty awareness
     problem = CompliantMechanismProblem(
         config=session.config,
         surrogate_model=surrogate,
         preprocessor=session.dataset.preprocessor,
+        use_uncertainty_penalty=req.use_uncertainty_penalty,
+        beta=req.beta,
     )
 
     # Solve via NSGA-II
@@ -622,8 +631,9 @@ def wizard_step3_optimize(req: Step3Request):
     opt_res = solver.solve(problem)
     session.optimization_result = opt_res
 
-    # MCDM TOPSIS selection
-    tradeoff = topsis_select_best_tradeoff(opt_res)
+    # MCDM TOPSIS selection with extrapolation risk verification
+    X_train_raw = session.dataset.X_train_raw
+    tradeoff = topsis_select_best_tradeoff(opt_res, train_x=X_train_raw)
     session.topsis_result = tradeoff
 
     # Save artifacts to session workspace
@@ -689,6 +699,7 @@ def wizard_step4_results(session_id: str = Query(..., description="ID của phi�
         )
 
     model_used = session.selected_model or session.best_model
+    extrapolation_risk = session.topsis_result.get("extrapolation_risk", None)
     return {
         "status": "success",
         "session_id": session_id,
@@ -697,6 +708,7 @@ def wizard_step4_results(session_id: str = Query(..., description="ID của phi�
         "recommended_design_inputs": session.topsis_result["recommended_design_inputs"],
         "predicted_mechanical_responses": session.topsis_result["predicted_mechanical_responses"],
         "topsis_score": session.topsis_result["topsis_score"],
+        "extrapolation_risk": extrapolation_risk,
         "total_pareto_solutions": session.optimization_result.n_pareto,
         "downloads": {
             "pareto_csv": f"/api/wizard/download/pareto-csv?session_id={session_id}",

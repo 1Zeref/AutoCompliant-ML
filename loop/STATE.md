@@ -70,10 +70,19 @@
     - Hỗ trợ xem trước 5 dòng dữ liệu và nút bấm chuyển bước mượt mà.
 - **Gate 8**: `pytest tests/test_web.py -v` $\rightarrow$ **16/16 PASSED (100%)**, toàn bộ test suite `pytest tests/ -v` $\rightarrow$ **35/35 PASSED (100%)**.
 
+### ✅ Loop 9: Precision & Robustness Enhancement (Cycle #010) - COMPLETED
+- Triển khai toàn diện 4 cơ chế nâng cao độ chuẩn xác, độ bền vững và tin cậy của hệ thống:
+  1. **Outlier Detection & Cleaning (`filter_outliers`)**: Tích hợp thuật toán IQR và Z-Score lọc các điểm dị biệt hoặc lỗi phân kỳ/méo lưới FEA trong `autocompliant/data/preprocessor.py`.
+  2. **Weighted Ensemble Surrogate (`WeightedEnsembleSurrogate`)**: Kết hợp các mô hình surrogate theo trọng số $w_m \propto \frac{R^2_m}{1 - R^2_m + \epsilon}$ và định lượng độ bất định nhận thức (Epistemic Uncertainty) $\sigma(x)$ từ độ phân kỳ giữa các thành viên.
+  3. **Uncertainty-Aware Robust Optimization**: Hỗ trợ phạt độ bất định LCB ($\mu \mp \beta\sigma$) và thắt chặt ràng buộc an toàn kỹ thuật trong `CompliantMechanismProblem`.
+  4. **Extrapolation Risk & Confidence Metric**: Đo lường khoảng cách chuẩn hóa (Mahalanobis/Z-score) từ điểm thiết kế Pareto tới không gian phân bố huấn luyện thực tế, gán nhãn độ tin cậy và cấp độ rủi ro ngoại suy.
+  5. **WebUI & API Integration**: Bổ sung checkbox phạt độ bất định tại Bước 3 và hiển thị thẻ phân loại độ tin cậy (Confidence Badge) tại Bước 4.
+- **Gate 9**: `pytest tests/test_precision.py -v` $\rightarrow$ **5/5 PASSED (100%)**, toàn bộ test suite `pytest tests/ -v` $\rightarrow$ **40/40 PASSED (100%)**.
+
 ---
 
 ## Cumulative Verification Status
-- **Total Test Cases**: 35/35 PASSED (100%).
+- **Total Test Cases**: 40/40 PASSED (100%).
 - **Policy Gatekeeper (`loop-gate`)**: 100% Policy Compliant (`ALLOWED [ok]`).
 - **Optimal Mechanical Design Discovered**:
   - Hinge Thickness $t = 0.3678\text{ mm}$

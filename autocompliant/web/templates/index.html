@@ -416,6 +416,19 @@
         </div>
       </div>
 
+      <!-- Robust Uncertainty Penalty Controls -->
+      <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <label class="flex items-center gap-2 text-slate-200 cursor-pointer font-medium">
+          <input type="checkbox" id="optUncertaintyToggle" class="accent-sky-500 w-4 h-4 rounded">
+          <span>🛡️ Kích hoạt Tối ưu hóa Nhận biết Độ bất định (Uncertainty-Aware Robust Optimization)</span>
+        </label>
+        <div class="flex items-center gap-2 text-slate-400">
+          <span>Hệ số bảo thủ (\(\beta\)):</span>
+          <input type="number" id="optBeta" value="1.0" min="0.1" max="3.0" step="0.1" class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs font-mono">
+          <span class="text-[11px] text-slate-500">(LCB: \(\mu - \beta\sigma\))</span>
+        </div>
+      </div>
+
       <!-- Summary metrics -->
       <div id="optSummaryBox" class="hidden grid grid-cols-2 md:grid-cols-4 gap-4">
         <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center">
@@ -490,6 +503,14 @@
           <div class="pt-3 border-t border-slate-800 text-xs flex justify-between items-center text-slate-400">
             <span>TOPSIS Relative Closeness:</span>
             <span id="statTopsisScore" class="font-bold text-amber-400 text-sm">-</span>
+          </div>
+
+          <!-- Extrapolation Risk & Confidence Badge -->
+          <div id="extrapolationRiskCard" class="pt-2 border-t border-slate-800/60 text-xs flex justify-between items-center">
+            <span class="text-slate-400">Độ tin cậy Dự đoán (Extrapolation Risk):</span>
+            <span id="statConfidenceBadge" class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-950/80 border border-emerald-700 text-emerald-300">
+              Đang tính toán...
+            </span>
           </div>
         </div>
       </div>
@@ -1089,8 +1110,10 @@
       const popSize = parseInt(document.getElementById('optPopSize').value) || 80;
       const generations = parseInt(document.getElementById('optGenerations').value) || 50;
       const selectedModel = document.getElementById('optModelSelect').value || null;
+      const useUncertainty = document.getElementById('optUncertaintyToggle').checked;
+      const betaVal = parseFloat(document.getElementById('optBeta').value) || 1.0;
 
-      showLoading('Đang giải thuật toán tiến hóa NSGA-II (Quần thể: ' + popSize + ', Thế hệ: ' + generations + ') & lọc nghiệm TOPSIS...');
+      showLoading('Đang giải thuật toán tiến hóa NSGA-II (Quần thể: ' + popSize + ', Thế hệ: ' + generations + (useUncertainty ? ', Phạt LCB beta=' + betaVal : '') + ') & lọc nghiệm TOPSIS...');
 
       try {
         const res = await fetch('/api/wizard/step3-optimize', {
@@ -1101,6 +1124,8 @@
             pop_size: popSize,
             generations: generations,
             selected_model: selectedModel,
+            use_uncertainty_penalty: useUncertainty,
+            beta: betaVal,
           })
         });
         const data = await res.json();
@@ -1232,6 +1257,25 @@
         }).join('');
 
         document.getElementById('statTopsisScore').innerText = (data.topsis_score !== undefined ? data.topsis_score.toFixed(4) : '-');
+
+        // Render Extrapolation Risk & Confidence Badge
+        const confBadge = document.getElementById('statConfidenceBadge');
+        if (data.extrapolation_risk) {
+          const r = data.extrapolation_risk;
+          let badgeClasses = 'px-2 py-0.5 rounded text-[11px] font-semibold border ';
+          if (r.risk_color === 'emerald') {
+            badgeClasses += 'bg-emerald-950/80 border-emerald-700 text-emerald-300';
+          } else if (r.risk_color === 'amber') {
+            badgeClasses += 'bg-amber-950/80 border-amber-700 text-amber-300';
+          } else {
+            badgeClasses += 'bg-rose-950/80 border-rose-700 text-rose-300';
+          }
+          confBadge.className = badgeClasses;
+          confBadge.innerText = r.confidence_level_vi + ' (' + r.confidence_percentage + '% - max z=' + r.max_z_score + ')';
+        } else {
+          confBadge.className = 'px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 border border-slate-700 text-slate-400';
+          confBadge.innerText = 'N/A';
+        }
 
         document.getElementById('btnDownloadPareto').href = '/api/wizard/download/pareto-csv?session_id=' + state.sessionId;
         document.getElementById('btnDownloadConfig').href = '/api/wizard/download/best-design-json?session_id=' + state.sessionId;

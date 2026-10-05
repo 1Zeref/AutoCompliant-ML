@@ -108,4 +108,18 @@ Nhật ký ghi lại chi tiết các chu kỳ chạy thực tế của AutoCompl
   1. `pytest tests/test_web.py -v`: **16/16 PASSED (100%)**
   2. Toàn bộ test suite tích lũy `pytest tests/`: **35/35 PASSED (100%)**
   3. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
-- **Status**: 🏁 **DYNAMIC TOPOLOGY SELECTION FULLY OPERATIONAL & VERIFIED.**
+- **Status**: PASSED
+
+### [2026-10-05 20:52:00] Cycle #010 - Precision & Robustness Enhancement
+- **Actions Completed**:
+  - Triển khai hàm làm sạch và phát hiện ngoại lai `filter_outliers` (IQR & Z-score) trong [autocompliant/data/preprocessor.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/data/preprocessor.py).
+  - Triển khai mô hình xếp chồng có trọng số `WeightedEnsembleSurrogate` trong [autocompliant/models/ensemble_model.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/models/ensemble_model.py) hỗ trợ kết hợp mô hình theo hiệu năng $R^2$ và định lượng độ bất định $\sigma(x)$.
+  - Tích hợp rào chắn phạt độ bất định LCB ($\mu \mp \beta\sigma$) và ràng buộc bảo thủ trong bài toán tối ưu [autocompliant/optimization/problem.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/optimization/problem.py).
+  - Phát triển chỉ số rủi ro ngoại suy `calculate_extrapolation_risk` và tích hợp vào thuật toán lựa chọn thỏa hiệp TOPSIS [autocompliant/optimization/mcdm.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/optimization/mcdm.py).
+  - Nâng cấp API Step 3 và Step 4 trong [autocompliant/web/app.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/app.py) và giao diện [autocompliant/web/templates/index.html](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/templates/index.html) với toggle kích hoạt phạt độ bất định và thẻ hiển thị độ tin cậy ngoại suy (Confidence Badge).
+  - Xây dựng bộ test [tests/test_precision.py](file:///d:/CODE/AutoCompliant-ML/tests/test_precision.py).
+- **Gate Verification Results**:
+  1. `pytest tests/test_precision.py -v`: **5/5 PASSED (100%)**
+  2. Toàn bộ test suite tích lũy `pytest tests/ -v`: **40/40 PASSED (100%)**
+  3. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
+- **Status**: 🏁 **PRECISION & ROBUSTNESS ENHANCEMENT FULLY OPERATIONAL & VERIFIED.**

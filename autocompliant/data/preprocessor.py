@@ -1,6 +1,6 @@
 """Adaptive preprocessor for multi-output compliant mechanism surrogate pipelines."""
 
-from typing import Literal, Tuple, Union
+from typing import Literal, Tuple, Union, Any, Optional, List
 import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 
@@ -106,3 +106,61 @@ class AdaptivePreprocessor:
         if Y_arr.ndim == 1:
             Y_arr = Y_arr.reshape(-1, 1)
         return self.scaler_y.inverse_transform(Y_arr)
+
+
+def filter_outliers(
+    df,
+    columns=None,
+    method: Literal["iqr", "zscore"] = "iqr",
+    factor: float = 1.5,
+) -> Tuple[Any, np.ndarray]:
+    """Detect and filter abnormal FEA distortion or convergence failure data points.
+
+    Args:
+        df: Input pandas DataFrame containing mechanical data.
+        columns: Target columns to inspect for anomalies (e.g. outputs or inputs).
+                 If None, inspects all numeric columns.
+        method: Outlier detection method ('iqr' or 'zscore').
+        factor: Multiplier for IQR (default 1.5) or standard deviation threshold (default 3.0 for zscore).
+
+    Returns:
+        Tuple[pd.DataFrame, np.ndarray]: (cleaned_df, outlier_mask_boolean_array).
+            outlier_mask is True for anomalous rows that were filtered out.
+    """
+    import pandas as pd
+
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("df must be a pandas DataFrame.")
+
+    if columns is None:
+        target_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    else:
+        target_cols = [c for c in columns if c in df.columns and pd.api.types.is_numeric_dtype(df[c])]
+
+    if not target_cols:
+        return df.copy(), np.zeros(len(df), dtype=bool)
+
+    outlier_mask = np.zeros(len(df), dtype=bool)
+
+    for col in target_cols:
+        series = df[col].astype(float)
+        if method == "iqr":
+            q25 = series.quantile(0.25)
+            q75 = series.quantile(0.75)
+            iqr = q75 - q25
+            if iqr > 1e-12:
+                lower_bound = q25 - factor * iqr
+                upper_bound = q75 + factor * iqr
+                col_mask = (series < lower_bound) | (series > upper_bound)
+                outlier_mask = outlier_mask | col_mask.to_numpy()
+        elif method == "zscore":
+            mean = series.mean()
+            std = series.std(ddof=0)
+            if std > 1e-12:
+                z = np.abs((series - mean) / std)
+                col_mask = z > factor
+                outlier_mask = outlier_mask | col_mask.to_numpy()
+
+    cleaned_df = df.loc[~outlier_mask].reset_index(drop=True)
+    return cleaned_df, outlier_mask
+
