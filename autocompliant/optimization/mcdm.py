@@ -31,20 +31,20 @@ def calculate_extrapolation_risk(
     max_z = float(np.max(z_scores))
     mean_z = float(np.mean(z_scores))
 
-    # Confidence score calculation: e^(-0.5 * mean_z) * 100%
+    # Confidence score calculation: e^(-0.4 * max_z) * 100%
     confidence_pct = max(0.0, min(100.0, float(np.exp(-0.4 * max_z) * 100.0)))
 
     if max_z <= 1.5:
         level = "High Confidence"
         level_vi = "Độ tin cậy cao (Nội suy an toàn)"
         risk_color = "emerald"
-    elif max_z <= 2.5:
+    elif max_z <= 2.0:
         level = "Moderate Confidence"
         level_vi = "Độ tin cậy trung bình (Gần biên dữ liệu)"
         risk_color = "amber"
     else:
         level = "High Extrapolation Risk"
-        level_vi = "Nguy cơ ngoại suy cao (Ngoài vùng huấn luyện)"
+        level_vi = "Độ tin cậy thấp / Rủi ro ngoại suy cao (Ngoài vùng huấn luyện)"
         risk_color = "rose"
 
     return {
@@ -118,8 +118,10 @@ def topsis_select_best_tradeoff(
 
     # 5. Relative closeness to ideal solution: C_i = d_minus / (d_plus + d_minus)
     total_dist = d_plus + d_minus
-    total_dist = np.where(total_dist == 0, 1e-12, total_dist)
-    scores = d_minus / total_dist
+    # If all points in the Pareto front have identical objective values, or there is only 1 point:
+    # d_plus == 0 and d_minus == 0. In this case, the single/identical solution is by definition 100% optimal (closeness = 1.0).
+    eps = 1e-12
+    scores = np.where(total_dist < eps, 1.0, d_minus / (total_dist + eps))
 
     # Rank alternatives descending by score
     best_idx = int(np.argmax(scores))

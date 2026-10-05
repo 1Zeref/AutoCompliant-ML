@@ -32,17 +32,19 @@ class CompliantMechanismProblem(Problem):
         lower_bounds, upper_bounds = config.bounds
         n_var = config.D_in
 
-        # Identify objectives (default: maximize F2 and maximize f)
+        # Identify objectives (default: maximize F2 and maximize f, or all outputs marked with objective)
         self.obj_indices: List[Tuple[int, str]] = []
         for idx, out in enumerate(config.outputs):
             if out.symbol in ["F2", "f"] or out.name in ["output_displacement", "resonant_frequency"]:
                 self.obj_indices.append((idx, out.objective))
 
-        # Fallback if specific symbols not present: optimize all non-constrained or first 2
+        # Fallback if specific symbols not present: include all outputs having an objective specified
         if not self.obj_indices:
             for idx, out in enumerate(config.outputs):
-                if out.constraint_min is None and out.constraint_max is None:
+                if out.objective:
                     self.obj_indices.append((idx, out.objective))
+
+        # Ultimate fallback
         if not self.obj_indices:
             self.obj_indices = [(i, config.outputs[i].objective) for i in range(min(2, config.D_out))]
 

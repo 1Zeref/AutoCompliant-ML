@@ -122,4 +122,15 @@ Nhật ký ghi lại chi tiết các chu kỳ chạy thực tế của AutoCompl
   1. `pytest tests/test_precision.py -v`: **5/5 PASSED (100%)**
   2. Toàn bộ test suite tích lũy `pytest tests/ -v`: **40/40 PASSED (100%)**
   3. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
-- **Status**: 🏁 **PRECISION & ROBUSTNESS ENHANCEMENT FULLY OPERATIONAL & VERIFIED.**
+- **Status**: PASSED
+
+### [2026-10-05 21:33:00] Cycle #011 - TOPSIS Degeneracy Resolution & Custom Bounds Input
+- **Actions Completed**:
+  - Khắc phục triệt để phép chia 0 và suy biến TOPSIS khi mặt trước Pareto có 1 nghiệm hoặc các nghiệm trùng giá trị mục tiêu ($C_i = 1.0$) trong [autocompliant/optimization/mcdm.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/optimization/mcdm.py).
+  - Cập nhật phân ngưỡng Extrapolation Risk: $z \le 1.5$ (High), $1.5 < z \le 2.0$ (Moderate), $z > 2.0$ (High Risk/Low Confidence).
+  - Sửa hàm xây dựng hàm mục tiêu `obj_indices` trong [autocompliant/optimization/problem.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/optimization/problem.py) để không loại bỏ các biến Output có đặt ràng buộc bất đẳng thức, đảm bảo NSGA-II luôn chạy bài toán Pareto đa mục tiêu thực thụ.
+  - Mở rộng [autocompliant/web/app.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/app.py) và [autocompliant/web/templates/index.html](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/templates/index.html) cho phép người dùng tùy chỉnh trực tiếp miền biến thiên $X_{\min}, X_{\max}$ của từng biến đầu vào ở Bước 1.
+- **Gate Verification Results**:
+  1. `pytest tests/ -v`: **40/40 PASSED (100%)**
+  2. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
+- **Status**: 🏁 **TOPSIS DEGENERACY & CUSTOM BOUNDS FULLY OPERATIONAL & VERIFIED.**

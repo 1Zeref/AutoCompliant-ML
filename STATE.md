@@ -79,6 +79,19 @@
   5. **WebUI & API Integration**: Bổ sung checkbox phạt độ bất định tại Bước 3 và hiển thị thẻ phân loại độ tin cậy (Confidence Badge) tại Bước 4.
 - **Gate 9**: `pytest tests/test_precision.py -v` $\rightarrow$ **5/5 PASSED (100%)**, toàn bộ test suite `pytest tests/ -v` $\rightarrow$ **40/40 PASSED (100%)**.
 
+### ✅ Loop 10: TOPSIS Degeneracy Resolution & Custom Bounds Input (Cycle #011) - COMPLETED
+- Khắc phục triệt để lỗi `TOPSIS Relative Closeness: 0.0000` và hoàn thiện logic rủi ro ngoại suy:
+  1. **TOPSIS Degeneracy Fix (`autocompliant/optimization/mcdm.py`)**:
+     - Xử lý trường hợp tập Pareto suy biến về 1 nghiệm hoặc các nghiệm có cùng giá trị hàm mục tiêu ($d^+ + d^- = 0$): tự động chuẩn hóa $C_i = 1.0$ (thay vì $0.0000$).
+  2. **Preserve Constrained Outputs in Pareto Front (`autocompliant/optimization/problem.py`)**:
+     - Cập nhật logic `obj_indices`: Giữ lại các biến Output có đặt ràng buộc $\ge \text{min}$ hoặc $\le \text{max}$ trong danh sách hàm mục tiêu đa biến để NSGA-II luôn giải bài toán Pareto đa mục tiêu thực thụ, tránh biến thành bài toán đơn mục tiêu suy biến.
+  3. **Custom Variable Bounds in Step 1 (`autocompliant/web/app.py` & `index.html`)**:
+     - Mở rộng `ColumnMapping` với `bound_min` và `bound_max`.
+     - Cho phép người dùng chỉnh sửa trực tiếp cận biến hình học $X_{\min}, X_{\max}$ tại Bước 1 (ví dụ: ép $D \in [0.55, 0.60]$, $E \in [45, 50]$ theo đúng bài báo thay vì dạt lên $[0.55, 0.65]$).
+  4. **Refined Extrapolation Thresholds & Labels**:
+     - Ngưỡng phân loại $z \le 1.5$ (Cao), $1.5 < z \le 2.0$ (Trung bình), $z > 2.0$ (Độ tin cậy thấp / Rủi ro ngoại suy cao).
+- **Gate 10**: `pytest tests/ -v` $\rightarrow$ **40/40 PASSED (100%)**.
+
 ---
 
 ## Cumulative Verification Status

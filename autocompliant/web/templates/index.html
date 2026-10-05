@@ -172,11 +172,11 @@
                 <thead class="text-slate-400 uppercase bg-slate-900 border-b border-slate-800">
                   <tr>
                     <th class="p-3">Tên Cột</th>
-                    <th class="p-3">Miền Giá Trị [min, max]</th>
+                    <th class="p-3">Dữ liệu thực tế</th>
                     <th class="p-3">Vai Trò (Role)</th>
-                    <th class="p-3">Hướng Tối Ưu (Objective)</th>
-                    <th class="p-3">Ràng buộc dưới (≥ min)</th>
-                    <th class="p-3">Ràng buộc trên (≤ max)</th>
+                    <th class="p-3">Hướng Tối Ưu (Output)</th>
+                    <th class="p-3">Cận dưới (X min / Y ≥ min)</th>
+                    <th class="p-3">Cận trên (X max / Y ≤ max)</th>
                   </tr>
                 </thead>
                 <tbody id="columnMappingBody" class="divide-y divide-slate-800/80">
@@ -720,6 +720,7 @@
         }
 
         const isOutput = (defaultRole === 'output');
+        const isInput = (defaultRole === 'input');
 
         tr.innerHTML = `
           <td class="p-3 font-mono font-bold text-slate-200">${col.name}</td>
@@ -738,10 +739,10 @@
             </select>
           </td>
           <td class="p-3">
-            <input type="number" step="any" placeholder="Y >= min" class="cmin-input w-24 bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none ${!isOutput ? 'opacity-40 cursor-not-allowed' : ''}" ${!isOutput ? 'disabled' : ''}>
+            <input type="number" step="any" value="${isInput ? col.min : ''}" placeholder="${isInput ? 'X min (' + col.min + ')' : 'Y >= min'}" class="cmin-input w-28 bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none">
           </td>
           <td class="p-3">
-            <input type="number" step="any" placeholder="Y <= max" class="cmax-input w-24 bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none ${!isOutput ? 'opacity-40 cursor-not-allowed' : ''}" ${!isOutput ? 'disabled' : ''}>
+            <input type="number" step="any" value="${isInput ? col.max : ''}" placeholder="${isInput ? 'X max (' + col.max + ')' : 'Y <= max'}" class="cmax-input w-28 bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none">
           </td>
         `;
 
@@ -754,23 +755,37 @@
       const row = selectElement.closest('tr');
       const role = selectElement.value;
       const isOutput = (role === 'output');
+      const isIgnore = (role === 'ignore');
+      const colName = row.dataset.colName;
 
       const objSel = row.querySelector('.obj-select');
       const cminInp = row.querySelector('.cmin-input');
       const cmaxInp = row.querySelector('.cmax-input');
 
       objSel.disabled = !isOutput;
-      cminInp.disabled = !isOutput;
-      cmaxInp.disabled = !isOutput;
-
       if (isOutput) {
         objSel.classList.remove('opacity-40', 'cursor-not-allowed');
+        cminInp.placeholder = 'Y >= min';
+        cmaxInp.placeholder = 'Y <= max';
+        cminInp.disabled = false;
+        cmaxInp.disabled = false;
         cminInp.classList.remove('opacity-40', 'cursor-not-allowed');
         cmaxInp.classList.remove('opacity-40', 'cursor-not-allowed');
-      } else {
+      } else if (isIgnore) {
         objSel.classList.add('opacity-40', 'cursor-not-allowed');
+        cminInp.disabled = true;
+        cmaxInp.disabled = true;
         cminInp.classList.add('opacity-40', 'cursor-not-allowed');
         cmaxInp.classList.add('opacity-40', 'cursor-not-allowed');
+      } else {
+        // Input: allow editing custom X bounds
+        objSel.classList.add('opacity-40', 'cursor-not-allowed');
+        cminInp.disabled = false;
+        cmaxInp.disabled = false;
+        cminInp.classList.remove('opacity-40', 'cursor-not-allowed');
+        cmaxInp.classList.remove('opacity-40', 'cursor-not-allowed');
+        cminInp.placeholder = 'X min';
+        cmaxInp.placeholder = 'X max';
       }
     }
 
@@ -810,13 +825,16 @@
         if (role === 'input') inputCount++;
         if (role === 'output') outputCount++;
 
-        columnsPayload.push({
+        const mapping = {
           name: name,
           role: role,
           objective: role === 'output' ? objective : 'maximize',
           constraint_min: (role === 'output' && cminVal !== '') ? parseFloat(cminVal) : null,
           constraint_max: (role === 'output' && cmaxVal !== '') ? parseFloat(cmaxVal) : null,
-        });
+          bound_min: (role === 'input' && cminVal !== '') ? parseFloat(cminVal) : null,
+          bound_max: (role === 'input' && cmaxVal !== '') ? parseFloat(cmaxVal) : null,
+        };
+        columnsPayload.push(mapping);
       });
 
       if (inputCount < 1 || outputCount < 1) {

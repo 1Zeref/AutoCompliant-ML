@@ -1,24 +1,17 @@
 {
   "best_index": 0,
-  "topsis_score": 0.0,
+  "topsis_score": 0.780116610964437,
   "recommended_design_inputs": {
-    "A (mm)": 0.8678119403471009,
-    "B (mm)": 0.723725215394146,
-    "C (mm)": 0.6347402057701067,
-    "D (mm)": 0.6266992604045252,
-    "E (mm)": 51.6832181089233
+    "hinge_thickness_t": 0.34586813353347784,
+    "hinge_width_w": 14.969774814765369,
+    "arm_length_l": 35.189009416921145,
+    "bridge_angle_theta": 9.612301004228929,
+    "hinge_fillet_r": 2.1734414402047997
   },
   "predicted_mechanical_responses": {
-    "Stroke (\u00b5m)": 1351.6489,
-    "Safety factor": 1.91446
+    "safety_factor": 1.5536855498211697,
+    "output_displacement": 58.52691038411332,
+    "resonant_frequency": 761.9458582686402
   },
-  "total_pareto_solutions": 80,
-  "extrapolation_risk": {
-    "max_z_score": 2.014,
-    "mean_z_score": 1.171,
-    "confidence_percentage": 44.7,
-    "confidence_level": "Moderate Confidence",
-    "confidence_level_vi": "\u0110\u1ed9 tin c\u1eady trung b\u00ecnh (G\u1ea7n bi\u00ean d\u1eef li\u1ec7u)",
-    "risk_color": "amber"
-  }
+  "total_pareto_solutions": 2
 }

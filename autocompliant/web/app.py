@@ -65,6 +65,12 @@ class ColumnMapping(BaseModel):
     constraint_max: Optional[float] = Field(
         default=None, description="Giá trị ràng buộc trên (Y <= max)"
     )
+    bound_min: Optional[float] = Field(
+        default=None, description="Cận dưới miền biến thiên tùy chỉnh cho biến input (X >= min)"
+    )
+    bound_max: Optional[float] = Field(
+        default=None, description="Cận trên miền biến thiên tùy chỉnh cho biến input (X <= max)"
+    )
 
 
 class DynamicConfigRequest(BaseModel):
@@ -430,8 +436,8 @@ def wizard_configure_topology(req: DynamicConfigRequest):
     # Build inputs
     input_params: List[InputParam] = []
     for m in input_mappings:
-        col_min = float(df[m.name].min())
-        col_max = float(df[m.name].max())
+        col_min = float(m.bound_min) if m.bound_min is not None else float(df[m.name].min())
+        col_max = float(m.bound_max) if m.bound_max is not None else float(df[m.name].max())
         if col_min >= col_max:
             col_max = col_min + 1e-4
 
