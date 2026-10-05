@@ -1,16 +1,25 @@
-# Antigravity Task Loop
+# AutoCompliant-ML Autonomous Engineering Loop
 
 ## Objective
-[Mô tả mục tiêu ngắn gọn cần đạt được trong session này]
+Xây dựng pipeline Machine Learning thích ứng cấu hình & tối ưu hóa đa mục tiêu NSGA-II cho cơ cấu định vị vi mô đàn hồi (Compliant Mechanisms).
 
-## Execution Protocol
-1. **Read State**: Đọc `loop/STATE.md` để nắm các công việc đã làm và task hiện tại.
-2. **Execute**:
-   - Chỉ sửa đổi mã nguồn tương ứng với 1 task nhỏ (Minimal Diff).
-   - Không refactor lan man ngoài phạm vi task.
-3. **Verify**:
-   - Chạy lệnh test/lint tương ứng.
-   - Nếu test fail: quay lại bước 2 để sửa, tối đa 3 lần thử.
-4. **Update State**:
-   - Cập nhật kết quả vào `loop/STATE.md`.
-   - Ghi log vào `loop/loop-run-log.md`.
+## Loop Protocol
+1. **Read State**:
+   - Đọc `STATE.md` để xác định Loop hiện tại đang thực thi (Loop 1 -> Loop 5).
+   - Kiểm tra các task còn tồn đọng trong phần `Current Phase Tasks`.
+
+2. **Execute (Minimal Diff)**:
+   - Chỉ code các module thuộc Phase hiện tại.
+   - Luôn viết/cập nhật unit test tương ứng trong `tests/` trước khi coi là xong task.
+   - Không can thiệp sang các module thuộc Phase tương lai để tránh bùng nổ token/diff.
+
+3. **Verify (Safety Gate)**:
+   - Chạy lệnh kiểm tra được quy định trong `gate.yaml`:
+     ```powershell
+     pytest tests/ -v
+     ```
+   - Nếu test thất bại: Dừng lại sửa lỗi tại chỗ, tối đa 3 lần thử. Không được bỏ qua test.
+
+4. **Update State & Logging**:
+   - Cập nhật checklist và nhật ký lần chạy vào `STATE.md`.
+   - Ghi chi tiết metric hoặc log vào `loop-run-log.md`.
