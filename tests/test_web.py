@@ -66,6 +66,96 @@ def test_step1_success():
     assert len(data["data_summary"]["preview_rows"]) > 0
 
 
+def test_dynamic_parse_columns_success():
+    """Verify parse-columns extracts column stats and preview from uploaded CSV."""
+    df = pd.DataFrame({
+        "thickness_t": [0.3, 0.4, 0.5, 0.6, 0.7],
+        "width_w": [10.0, 11.0, 12.0, 13.0, 14.0],
+        "displacement_disp": [50.0, 55.0, 60.0, 65.0, 70.0],
+        "frequency_f": [600.0, 620.0, 640.0, 660.0, 680.0],
+    })
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+
+    response = client.post(
+        "/api/wizard/parse-columns",
+        files={"file": ("custom_dataset.csv", io.BytesIO(csv_bytes), "text/csv")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "session_id" in data
+    assert data["total_rows"] == 5
+    assert len(data["columns"]) == 4
+
+    col_map = {c["name"]: c for c in data["columns"]}
+    assert "thickness_t" in col_map
+    assert col_map["thickness_t"]["min"] == 0.3
+    assert col_map["thickness_t"]["max"] == 0.7
+    assert len(data["preview"]) == 5
+
+
+def test_dynamic_configure_topology_success():
+    """Verify configure-topology sets up TopologyConfig and CompliantDataset successfully."""
+    # 1. Parse CSV
+    df = pd.DataFrame({
+        "in_x1": [1.0, 2.0, 3.0, 4.0, 5.0] * 10,
+        "in_x2": [10.0, 20.0, 30.0, 40.0, 50.0] * 10,
+        "out_y1": [100.0, 110.0, 120.0, 130.0, 140.0] * 10,
+        "out_y2": [500.0, 520.0, 540.0, 560.0, 580.0] * 10,
+    })
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    res_parse = client.post(
+        "/api/wizard/parse-columns",
+        files={"file": ("test_dynamic.csv", io.BytesIO(csv_bytes), "text/csv")},
+    )
+    assert res_parse.status_code == 200
+    session_id = res_parse.json()["session_id"]
+
+    # 2. Configure topology
+    payload = {
+        "session_id": session_id,
+        "topology_name": "Test_Custom_2In_2Out",
+        "columns": [
+            {"name": "in_x1", "role": "input"},
+            {"name": "in_x2", "role": "input"},
+            {"name": "out_y1", "role": "output", "objective": "maximize", "constraint_min": 100.0},
+            {"name": "out_y2", "role": "output", "objective": "minimize"},
+        ],
+    }
+    response = client.post("/api/wizard/configure-topology", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["D_in"] == 2
+    assert data["D_out"] == 2
+    assert data["input_features"] == ["in_x1", "in_x2"]
+    assert data["output_targets"] == ["out_y1", "out_y2"]
+    assert data["next_step_unlocked"] == 2
+
+
+def test_dynamic_configure_topology_missing_output_failure():
+    """Verify negative test: configure-topology fails with HTTP 400 when no output column is selected."""
+    df = pd.DataFrame({"col_a": [1.0, 2.0], "col_b": [3.0, 4.0]})
+    res_parse = client.post(
+        "/api/wizard/parse-columns",
+        files={"file": ("no_output.csv", io.BytesIO(df.to_csv(index=False).encode()), "text/csv")},
+    )
+    session_id = res_parse.json()["session_id"]
+
+    # Payload with 2 inputs, 0 outputs
+    payload = {
+        "session_id": session_id,
+        "topology_name": "No_Output_Topo",
+        "columns": [
+            {"name": "col_a", "role": "input"},
+            {"name": "col_b", "role": "input"},
+        ],
+    }
+    response = client.post("/api/wizard/configure-topology", json=payload)
+    assert response.status_code == 400
+    assert "ít nhất 1 biến đầu ra" in response.json()["detail"].lower()
+
+
 def test_step2_unauthorized_skip():
     """Verify server-side gate blocks Step 2 request if Step 1 is incomplete or session is invalid."""
     response = client.post(

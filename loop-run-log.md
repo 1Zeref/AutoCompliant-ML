@@ -90,4 +90,22 @@ Nhật ký ghi lại chi tiết các chu kỳ chạy thực tế của AutoCompl
   1. `pytest tests/test_web.py -v`: **13/13 PASSED (100%)**
   2. Toàn bộ test suite tích lũy `pytest tests/`: **32/32 PASSED (100%)**
   3. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
-- **Status**: 🏁 **GUIDED STEPPER WIZARD FULLY OPERATIONAL & VERIFIED.**
+- **Status**: PASSED
+
+### [2026-10-05 20:30:00] Cycle #009 - Dynamic Topology Selection & Interactive Column Mapping
+- **Actions Completed**:
+  - Xây dựng Pydantic Schemas `ColumnMapping` và `DynamicConfigRequest` trong [autocompliant/web/app.py](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/app.py).
+  - Triển khai 2 API routes:
+    - `POST /api/wizard/parse-columns`: Tải lên tệp CSV bất kỳ, tự động phân tích các cột số, tính toán miền giá trị `[min, max]`, tạo session và trả về dữ liệu xem trước 5 dòng.
+    - `POST /api/wizard/configure-topology`: Khởi tạo động `TopologyConfig` từ danh sách ánh xạ cột của người dùng, xuất file `topology.yaml` trong session workspace, chuẩn bị dataset và mở khóa Bước 2. Bắt buộc thỏa mãn điều kiện $\ge 1$ input và $\ge 1$ output.
+  - Cập nhật giao diện Stepper Wizard tại [autocompliant/web/templates/index.html](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/templates/index.html):
+    - Pha 1 (Upload Area): Drag & drop / File picker chọn tệp CSV.
+    - Pha 2 (Column Mapping Table): Bảng phân loại trực quan với dropdown chọn vai trò `Input (X)`, `Output (Y)`, `Bỏ qua (Ignore)`, hướng tối ưu hóa `Maximize/Minimize`, và ô nhập ngưỡng ràng buộc bất đẳng thức.
+    - Tự động bật/tắt (disable/enable) các trường nhập dựa trên vai trò cột.
+    - Nút bấm xác nhận cấu hình và tự động kích hoạt chuyển sang Bước 2.
+  - Viết bộ kiểm thử bổ sung trong [tests/test_web.py](file:///d:/CODE/AutoCompliant-ML/tests/test_web.py): `test_dynamic_parse_columns_success`, `test_dynamic_configure_topology_success`, `test_dynamic_configure_topology_missing_output_failure`.
+- **Gate Verification Results**:
+  1. `pytest tests/test_web.py -v`: **16/16 PASSED (100%)**
+  2. Toàn bộ test suite tích lũy `pytest tests/`: **35/35 PASSED (100%)**
+  3. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
+- **Status**: 🏁 **DYNAMIC TOPOLOGY SELECTION FULLY OPERATIONAL & VERIFIED.**

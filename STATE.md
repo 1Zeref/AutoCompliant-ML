@@ -58,10 +58,22 @@
     - Spinner / Loading Banner kèm thông báo trạng thái tức thời.
 - **Gate 7**: `pytest tests/test_web.py -v` $\rightarrow$ **13/13 PASSED (100%)**, toàn bộ test suite `pytest tests/ -v` $\rightarrow$ **32/32 PASSED (100%)**.
 
+### ✅ Loop 8: Dynamic Topology Selection & Column Role Mapping (Cycle #009) - COMPLETED
+- Triển khai tính năng **Dynamic Topology Selection** cho phép tự động nhận diện cấu trúc dataset từ tệp CSV bất kỳ và gán vai trò trực tiếp trên giao diện:
+  - Pydantic Models: `ColumnMapping` (name, role: input/output/ignore, objective: max/min, bounds, constraints) và `DynamicConfigRequest`.
+  - Backend Endpoints:
+    - `POST /api/wizard/parse-columns`: Đọc CSV, kiểm tra kiểu dữ liệu số, tính toán miền giá trị `[min, max]` của từng cột, tạo session và trả về 5 dòng preview.
+    - `POST /api/wizard/configure-topology`: Khởi tạo động đối tượng `TopologyConfig`, lưu `topology.yaml` trong thư mục session, khởi tạo `CompliantDataset` và mở khóa Bước 2. Bắt buộc kiểm tra ít nhất 1 biến Input và 1 biến Output.
+  - Frontend SPA tại [autocompliant/web/templates/index.html](file:///d:/CODE/AutoCompliant-ML/autocompliant/web/templates/index.html):
+    - Pha 1 (Upload Area): Chọn file CSV bất kỳ, tự động gửi parse cột.
+    - Pha 2 (Column Mapping Table): Bảng phân loại vai trò trực quan, hỗ trợ chọn `Input`, `Output`, `Ignore`, hướng tối ưu `Maximize/Minimize`, ngưỡng ràng buộc $\ge \text{min}, \le \text{max}$. Tự động vô hiệu hóa các ô không cần thiết khi chọn `Input` hoặc `Ignore`.
+    - Hỗ trợ xem trước 5 dòng dữ liệu và nút bấm chuyển bước mượt mà.
+- **Gate 8**: `pytest tests/test_web.py -v` $\rightarrow$ **16/16 PASSED (100%)**, toàn bộ test suite `pytest tests/ -v` $\rightarrow$ **35/35 PASSED (100%)**.
+
 ---
 
 ## Cumulative Verification Status
-- **Total Test Cases**: 32/32 PASSED (100%).
+- **Total Test Cases**: 35/35 PASSED (100%).
 - **Policy Gatekeeper (`loop-gate`)**: 100% Policy Compliant (`ALLOWED [ok]`).
 - **Optimal Mechanical Design Discovered**:
   - Hinge Thickness $t = 0.3678\text{ mm}$

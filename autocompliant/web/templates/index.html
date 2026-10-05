@@ -6,7 +6,7 @@
   <title>AutoCompliant-ML | Guided Optimization Wizard</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Chart.js CDN (maintained for compatibility) -->
+  <!-- Chart.js CDN (maintained for backwards compatibility) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- Plotly.js CDN -->
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
@@ -117,12 +117,96 @@
       <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
         <div>
           <h2 class="text-lg font-bold text-sky-400">Bước 1: Khởi tạo Cấu hình Topology & Nạp Dữ liệu</h2>
-          <p class="text-xs text-slate-400">Chọn cấu hình cơ cấu đàn hồi và nạp dữ liệu mô phỏng phần tử hữu hạn (FEA).</p>
+          <p class="text-xs text-slate-400">Tự động nhận diện cấu trúc dataset từ CSV hoặc chọn cấu hình mẫu có sẵn.</p>
         </div>
         <span class="text-xs bg-slate-800 text-slate-300 px-3 py-1 rounded-full border border-slate-700">Bước 1 / 4</span>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Mode Selector: Dynamic CSV vs Preset YAML -->
+      <div class="flex border-b border-slate-800 gap-4">
+        <button id="btnModeDynamic" onclick="switchStep1Mode('dynamic')" class="pb-2 text-sm font-semibold border-b-2 border-sky-400 text-sky-400 flex items-center gap-2">
+          <span>⚡ Tự động Nhận diện từ CSV (Dynamic Topology)</span>
+          <span class="text-[10px] bg-sky-950 text-sky-300 px-2 py-0.5 rounded border border-sky-800">Mới</span>
+        </button>
+        <button id="btnModePreset" onclick="switchStep1Mode('preset')" class="pb-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2">
+          <span>📋 Cấu hình Mẫu YAML (Bridge / Scott-Russell)</span>
+        </button>
+      </div>
+
+      <!-- ================= DYNAMIC TOPOLOGY WORKFLOW ================= -->
+      <div id="dynamicTopologySection" class="space-y-6">
+        <!-- PHA 1: UPLOAD AREA -->
+        <div id="dynamicUploadPhase" class="border-2 border-dashed border-slate-700 hover:border-sky-500 rounded-xl p-8 flex flex-col items-center justify-center text-center gap-3 transition bg-slate-950/40">
+          <div class="w-12 h-12 rounded-full bg-sky-950 flex items-center justify-center text-sky-400 text-xl">
+            📂
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-slate-200">Kéo thả tệp CSV hoặc bấm để chọn tệp</h3>
+            <p class="text-xs text-slate-400 mt-1">Hệ thống sẽ tự động quét danh sách cột, nhận diện kiểu số và tính toán miền giá trị [min, max].</p>
+          </div>
+          <input type="file" id="dynamicCsvInput" accept=".csv" class="hidden" onchange="uploadAndParseCSV()">
+          <button onclick="document.getElementById('dynamicCsvInput').click()" class="bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-5 rounded-lg text-xs shadow transition mt-2">
+            Chọn tệp CSV từ máy tính
+          </button>
+        </div>
+
+        <!-- PHA 2: COLUMN MAPPING TABLE (Hidden until parsed) -->
+        <div id="columnMappingPhase" class="hidden space-y-4">
+          <div class="flex flex-col md:flex-row justify-between md:items-center gap-3 bg-slate-950 border border-slate-800 p-4 rounded-xl">
+            <div>
+              <span class="text-xs text-slate-400 uppercase font-semibold">Tên Cơ cấu Thiết kế</span>
+              <input type="text" id="dynamicTopologyName" value="Custom_Compliant_Mechanism" class="bg-slate-900 border border-slate-700 rounded px-2.5 py-1 text-sm text-sky-300 font-medium ml-2 focus:border-sky-500 focus:outline-none">
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+              <span id="dynamicRowsCount" class="bg-slate-800 text-slate-300 px-2.5 py-1 rounded">0 dòng dữ liệu</span>
+              <button onclick="resetDynamicUpload()" class="text-slate-400 hover:text-slate-200 underline">
+                ↺ Tải tệp CSV khác
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <span class="text-xs font-semibold text-slate-300 uppercase">Phân loại Vai trò Cột (Input / Output / Ignore)</span>
+            <div class="bg-slate-950 border border-slate-800 rounded-lg overflow-x-auto">
+              <table class="w-full text-xs text-left text-slate-300">
+                <thead class="text-slate-400 uppercase bg-slate-900 border-b border-slate-800">
+                  <tr>
+                    <th class="p-3">Tên Cột</th>
+                    <th class="p-3">Miền Giá Trị [min, max]</th>
+                    <th class="p-3">Vai Trò (Role)</th>
+                    <th class="p-3">Hướng Tối Ưu (Objective)</th>
+                    <th class="p-3">Ràng buộc dưới (≥ min)</th>
+                    <th class="p-3">Ràng buộc trên (≤ max)</th>
+                  </tr>
+                </thead>
+                <tbody id="columnMappingBody" class="divide-y divide-slate-800/80">
+                  <!-- Generated dynamically via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Preview Table of parsed CSV -->
+          <div class="space-y-2">
+            <span class="text-xs font-semibold text-slate-300 uppercase">Xem trước 5 dòng dữ liệu đầu tiên (Preview)</span>
+            <div class="bg-slate-950 border border-slate-800 rounded-lg overflow-x-auto max-h-48">
+              <table id="dynamicPreviewTable" class="w-full text-xs text-left text-slate-300">
+                <thead id="dynamicPreviewHead" class="text-slate-400 uppercase bg-slate-900 sticky top-0 border-b border-slate-800"></thead>
+                <tbody id="dynamicPreviewBody" class="divide-y divide-slate-800/60"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-2">
+            <button onclick="confirmDynamicTopology()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 px-6 rounded-lg text-sm shadow transition flex items-center gap-2">
+              <span>✅ Xác nhận Cấu hình & Chuyển sang Bước 2</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= PRESET YAML WORKFLOW (FALLBACK) ================= -->
+      <div id="presetTopologySection" class="hidden grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Left: Config & Data Source Inputs -->
         <div class="space-y-4">
           <div>
@@ -178,12 +262,11 @@
             <!-- Upload Input -->
             <div id="uploadContainer" class="hidden space-y-2">
               <input type="file" id="datasetFile" accept=".csv,.parquet" class="block w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-sky-950 file:text-sky-300 hover:file:bg-sky-900 cursor-pointer border border-slate-700 rounded-lg bg-slate-950">
-              <p class="text-xs text-slate-500">Hỗ trợ định dạng CSV hoặc Parquet với đầy đủ các cột $X$ và $Y$ tương ứng topology.</p>
             </div>
           </div>
 
           <button id="btnStep1Submit" onclick="submitStep1()" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2.5 px-4 rounded-lg text-sm shadow transition flex items-center justify-center gap-2">
-            <span>📥 Xác thực & Nạp Dữ liệu</span>
+            <span>📥 Xác thực & Nạp Dữ liệu Preset</span>
           </button>
         </div>
 
@@ -357,7 +440,7 @@
       <div class="space-y-2">
         <div class="flex justify-between items-center">
           <span class="text-xs font-semibold text-slate-300 uppercase">Biểu đồ Mặt trước Pareto Tương tác (Plotly.js: F2 vs f)</span>
-          <span class="text-xs text-slate-400">⭐ Ngôi sao đỏ: Điểm tối ưu thỏa hiệp TOPSIS Knee-point</span>
+          <span class="text-xs text-slate-400">⭐ Ngôi sao vàng: Điểm tối ưu thỏa hiệp TOPSIS Knee-point</span>
         </div>
         <div id="paretoPlotlyBox" class="bg-slate-950 border border-slate-800 rounded-lg p-2 h-96 flex items-center justify-center text-slate-500 text-xs">
           Biểu đồ Pareto Front sẽ hiển thị tại đây sau khi tối ưu hóa.
@@ -455,6 +538,7 @@
       step1Data: null,
       step2Data: null,
       step3Data: null,
+      parsedColumns: [],
     };
 
     function showAlert(msg, isError = false) {
@@ -520,6 +604,246 @@
       }
     }
 
+    function switchStep1Mode(mode) {
+      hideAlert();
+      if (mode === 'dynamic') {
+        document.getElementById('btnModeDynamic').className = 'pb-2 text-sm font-semibold border-b-2 border-sky-400 text-sky-400 flex items-center gap-2';
+        document.getElementById('btnModePreset').className = 'pb-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2';
+        document.getElementById('dynamicTopologySection').classList.remove('hidden');
+        document.getElementById('presetTopologySection').classList.add('hidden');
+      } else {
+        document.getElementById('btnModeDynamic').className = 'pb-2 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2';
+        document.getElementById('btnModePreset').className = 'pb-2 text-sm font-semibold border-b-2 border-sky-400 text-sky-400 flex items-center gap-2';
+        document.getElementById('dynamicTopologySection').classList.add('hidden');
+        document.getElementById('presetTopologySection').classList.remove('hidden');
+      }
+    }
+
+    // =========================================================================
+    // DYNAMIC TOPOLOGY JAVASCRIPT FUNCTIONS
+    // =========================================================================
+
+    // 1. Upload & Parse CSV (Pha 1 -> Pha 2)
+    async function uploadAndParseCSV() {
+      const input = document.getElementById('dynamicCsvInput');
+      if (!input.files || input.files.length === 0) return;
+      const file = input.files[0];
+
+      showLoading('Đang phân tích cấu trúc cột và kiểm tra kiểu số...');
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('/api/wizard/parse-columns', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        hideLoading();
+
+        if (!res.ok) {
+          showAlert(data.detail || 'Không thể đọc tệp CSV.', true);
+          return;
+        }
+
+        state.sessionId = data.session_id;
+        state.parsedColumns = data.columns || [];
+        updateSessionBadge(data.session_id);
+
+        document.getElementById('dynamicRowsCount').innerText = data.total_rows + ' dòng dữ liệu';
+        renderColumnMappingTable(data.columns);
+        renderDynamicPreview(data.columns, data.preview || []);
+
+        // Hide Phase 1, Show Phase 2
+        document.getElementById('dynamicUploadPhase').classList.add('hidden');
+        document.getElementById('columnMappingPhase').classList.remove('hidden');
+        showAlert('Đã nhận diện thành công ' + data.columns.length + ' cột từ tệp CSV. Vui lòng phân loại vai trò bên dưới.');
+      } catch (err) {
+        hideLoading();
+        showAlert('Lỗi tải tệp: ' + err.message, true);
+      }
+    }
+
+    function resetDynamicUpload() {
+      document.getElementById('dynamicCsvInput').value = '';
+      document.getElementById('columnMappingPhase').classList.add('hidden');
+      document.getElementById('dynamicUploadPhase').classList.remove('hidden');
+      hideAlert();
+    }
+
+    function renderColumnMappingTable(columns) {
+      const tbody = document.getElementById('columnMappingBody');
+      tbody.innerHTML = '';
+
+      const totalCols = columns.length;
+
+      columns.forEach((col, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-900/60 transition';
+        tr.dataset.colName = col.name;
+
+        // Smart role heuristic: default inputs for early cols, output for last cols or matching target keywords
+        const lowerName = col.name.toLowerCase();
+        let defaultRole = 'input';
+        if (
+          lowerName.includes('out') ||
+          lowerName.includes('disp') ||
+          lowerName.includes('freq') ||
+          lowerName.includes('safe') ||
+          lowerName.includes('target') ||
+          lowerName.includes('f1') ||
+          lowerName.includes('f2') ||
+          (idx >= totalCols - 2 && totalCols > 2)
+        ) {
+          defaultRole = 'output';
+        }
+
+        const isOutput = (defaultRole === 'output');
+
+        tr.innerHTML = `
+          <td class="p-3 font-mono font-bold text-slate-200">${col.name}</td>
+          <td class="p-3 font-mono text-slate-400">[${col.min.toFixed(3)}, ${col.max.toFixed(3)}]</td>
+          <td class="p-3">
+            <select onchange="toggleRowInputs(this)" class="role-select bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none">
+              <option value="input" ${defaultRole === 'input' ? 'selected' : ''}>Input (Biến X)</option>
+              <option value="output" ${defaultRole === 'output' ? 'selected' : ''}>Output (Mục tiêu Y)</option>
+              <option value="ignore" ${defaultRole === 'ignore' ? 'selected' : ''}>Bỏ qua (Ignore)</option>
+            </select>
+          </td>
+          <td class="p-3">
+            <select class="obj-select bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none ${!isOutput ? 'opacity-40 cursor-not-allowed' : ''}" ${!isOutput ? 'disabled' : ''}>
+              <option value="maximize">Maximize (Cực đại)</option>
+              <option value="minimize">Minimize (Cực tiểu)</option>
+            </select>
+          </td>
+          <td class="p-3">
+            <input type="number" step="any" placeholder="Y >= min" class="cmin-input w-24 bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none ${!isOutput ? 'opacity-40 cursor-not-allowed' : ''}" ${!isOutput ? 'disabled' : ''}>
+          </td>
+          <td class="p-3">
+            <input type="number" step="any" placeholder="Y <= max" class="cmax-input w-24 bg-slate-900 border border-slate-700 rounded p-1.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none ${!isOutput ? 'opacity-40 cursor-not-allowed' : ''}" ${!isOutput ? 'disabled' : ''}>
+          </td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 2. Toggle Row Inputs based on Role selection
+    function toggleRowInputs(selectElement) {
+      const row = selectElement.closest('tr');
+      const role = selectElement.value;
+      const isOutput = (role === 'output');
+
+      const objSel = row.querySelector('.obj-select');
+      const cminInp = row.querySelector('.cmin-input');
+      const cmaxInp = row.querySelector('.cmax-input');
+
+      objSel.disabled = !isOutput;
+      cminInp.disabled = !isOutput;
+      cmaxInp.disabled = !isOutput;
+
+      if (isOutput) {
+        objSel.classList.remove('opacity-40', 'cursor-not-allowed');
+        cminInp.classList.remove('opacity-40', 'cursor-not-allowed');
+        cmaxInp.classList.remove('opacity-40', 'cursor-not-allowed');
+      } else {
+        objSel.classList.add('opacity-40', 'cursor-not-allowed');
+        cminInp.classList.add('opacity-40', 'cursor-not-allowed');
+        cmaxInp.classList.add('opacity-40', 'cursor-not-allowed');
+      }
+    }
+
+    function renderDynamicPreview(columns, previewRows) {
+      const thead = document.getElementById('dynamicPreviewHead');
+      const tbody = document.getElementById('dynamicPreviewBody');
+
+      thead.innerHTML = '<tr>' + columns.map(c => '<th class="p-2">' + c.name + '</th>').join('') + '</tr>';
+      tbody.innerHTML = previewRows.map(row => {
+        return '<tr class="hover:bg-slate-900/60">' + columns.map(c => {
+          const val = row[c.name];
+          return '<td class="p-2 font-mono">' + (typeof val === 'number' ? val.toFixed(3) : val) + '</td>';
+        }).join('') + '</tr>';
+      }).join('');
+    }
+
+    // 3. Confirm Dynamic Topology Configuration
+    async function confirmDynamicTopology() {
+      if (!state.sessionId) {
+        showAlert('Chưa có session. Vui lòng tải lên tệp CSV trước.', true);
+        return;
+      }
+
+      const rows = document.querySelectorAll('#columnMappingBody tr');
+      const columnsPayload = [];
+
+      let inputCount = 0;
+      let outputCount = 0;
+
+      rows.forEach(row => {
+        const name = row.dataset.colName;
+        const role = row.querySelector('.role-select').value;
+        const objective = row.querySelector('.obj-select').value;
+        const cminVal = row.querySelector('.cmin-input').value;
+        const cmaxVal = row.querySelector('.cmax-input').value;
+
+        if (role === 'input') inputCount++;
+        if (role === 'output') outputCount++;
+
+        columnsPayload.push({
+          name: name,
+          role: role,
+          objective: role === 'output' ? objective : 'maximize',
+          constraint_min: (role === 'output' && cminVal !== '') ? parseFloat(cminVal) : null,
+          constraint_max: (role === 'output' && cmaxVal !== '') ? parseFloat(cmaxVal) : null,
+        });
+      });
+
+      if (inputCount < 1 || outputCount < 1) {
+        showAlert('Cấu hình không hợp lệ: Bắt buộc phải chọn ít nhất 1 biến Input và 1 biến Output.', true);
+        return;
+      }
+
+      const topoName = document.getElementById('dynamicTopologyName').value || 'Custom_Compliant_Mechanism';
+
+      showLoading('Đang khởi tạo cấu hình Topology và thiết lập bộ tiền xử lý AdaptivePreprocessor...');
+
+      try {
+        const res = await fetch('/api/wizard/configure-topology', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: state.sessionId,
+            topology_name: topoName,
+            columns: columnsPayload,
+          })
+        });
+        const data = await res.json();
+        hideLoading();
+
+        if (!res.ok) {
+          showAlert(data.detail || 'Lỗi khi cấu hình topology.', true);
+          return;
+        }
+
+        state.unlockedStep = Math.max(state.unlockedStep, data.next_step_unlocked || 2);
+        const btnNext = document.getElementById('btnToStep2');
+        btnNext.disabled = false;
+        btnNext.className = 'bg-sky-600 hover:bg-sky-500 text-white font-semibold py-2 px-5 rounded-lg text-sm transition';
+
+        showAlert('Cấu trúc cơ cấu đã xác nhận thành công (Din=' + data.D_in + ', Dout=' + data.D_out + ')! Tự động chuyển sang Bước 2...');
+        setTimeout(() => {
+          goToStep(2);
+        }, 600);
+      } catch (err) {
+        hideLoading();
+        showAlert('Lỗi: ' + err.message, true);
+      }
+    }
+
+    // =========================================================================
+    // PRESET TOPOLOGY FUNCTIONS (BACKWARD COMPATIBILITY)
+    // =========================================================================
+
     function toggleDataSourceMode() {
       const mode = document.querySelector('input[name="dataSource"]:checked').value;
       if (mode === 'synthetic') {
@@ -565,7 +889,6 @@
       document.getElementById('topoOutputs').innerText = topo.outputs.map(o => o.symbol || o.name).join(', ');
     }
 
-    // Step 1: Submit Data
     async function submitStep1() {
       const topoFile = document.getElementById('topologySelect').value;
       if (!topoFile) {
@@ -606,7 +929,6 @@
         updateSessionBadge(data.session_id);
         renderPreviewTable(data.data_summary);
 
-        // Unlock Step 2
         state.unlockedStep = Math.max(state.unlockedStep, data.next_step_unlocked || 2);
         const btnNext = document.getElementById('btnToStep2');
         btnNext.disabled = false;
@@ -615,7 +937,7 @@
         showAlert('Đã nạp thành công ' + data.data_summary.num_samples + ' mẫu dữ liệu. Bước 2 đã được mở khóa!');
       } catch (err) {
         hideLoading();
-        showAlert('Lỗi mạng hoặc server: ' + err.message, true);
+        showAlert('Lỗi: ' + err.message, true);
       }
     }
 
@@ -635,7 +957,9 @@
       }).join('');
     }
 
-    // Step 2: Run Benchmark
+    // =========================================================================
+    // STEP 2: RUN BENCHMARK
+    // =========================================================================
     async function submitStep2() {
       if (!state.sessionId) {
         showAlert('Chưa có session. Vui lòng hoàn thành Bước 1 trước.', true);
@@ -678,7 +1002,6 @@
           optSelect.appendChild(opt);
         });
 
-        // Unlock Step 3
         state.unlockedStep = Math.max(state.unlockedStep, data.next_step_unlocked || 3);
         const btnNext = document.getElementById('btnToStep3');
         btnNext.disabled = false;
@@ -755,7 +1078,9 @@
       Plotly.newPlot('plotlyScatter', [tracePoints, traceLine], layout, { responsive: true, displayModeBar: false });
     }
 
-    // Step 3: Run Optimization
+    // =========================================================================
+    // STEP 3: RUN OPTIMIZATION
+    // =========================================================================
     async function submitStep3() {
       if (!state.sessionId) {
         showAlert('Chưa có session. Vui lòng hoàn thành Bước 2 trước.', true);
@@ -788,16 +1113,13 @@
 
         state.step3Data = data;
 
-        // Update stats
         document.getElementById('statParetoCount').innerText = data.pareto_summary.num_pareto_points;
         document.getElementById('statOptTime').innerText = data.pareto_summary.execution_time_sec + 's';
         document.getElementById('statTopsisIndex').innerText = '#' + (data.topsis_best_index + 1);
         document.getElementById('optSummaryBox').classList.remove('hidden');
 
-        // Render Plotly Pareto Front
         renderPlotlyPareto(data.pareto_points, data.topsis_best_index);
 
-        // Unlock Step 4
         state.unlockedStep = Math.max(state.unlockedStep, data.next_step_unlocked || 4);
         const btnNext = document.getElementById('btnToStep4');
         btnNext.disabled = false;
@@ -814,14 +1136,25 @@
       const box = document.getElementById('paretoPlotlyBox');
       box.innerHTML = '<div id="plotlyPareto" style="width:100%;height:100%;"></div>';
 
-      const xVals = points.map(p => p.F2_displacement !== undefined ? p.F2_displacement : p.output_displacement);
-      const yVals = points.map(p => p.f_frequency !== undefined ? p.f_frequency : p.resonant_frequency);
-      const colorVals = points.map(p => p.F1_safety !== undefined ? p.F1_safety : p.safety_factor);
+      const xKeys = ['F2_displacement', 'output_displacement'];
+      const yKeys = ['f_frequency', 'resonant_frequency'];
+      const cKeys = ['F1_safety', 'safety_factor'];
+
+      const firstPt = points[0] || {};
+      const actualXKey = xKeys.find(k => k in firstPt) || Object.keys(firstPt).find(k => k !== 'design') || 'x';
+      const actualYKey = yKeys.find(k => k in firstPt) || Object.keys(firstPt).find(k => k !== 'design' && k !== actualXKey) || actualXKey;
+      const actualCKey = cKeys.find(k => k in firstPt) || actualYKey;
+
+      const xVals = points.map(p => p[actualXKey]);
+      const yVals = points.map(p => p[actualYKey]);
+      const colorVals = points.map(p => p[actualCKey]);
+
       const hoverTexts = points.map((p, idx) => {
-        return 'Nghiệm #' + (idx+1) + '<br>' +
-               'Độ phóng đại F2: ' + (p.F2_displacement || p.output_displacement) + ' µm<br>' +
-               'Tần số f: ' + (p.f_frequency || p.resonant_frequency) + ' Hz<br>' +
-               'Hệ số an toàn F1: ' + (p.F1_safety || p.safety_factor);
+        let desc = 'Nghiệm #' + (idx+1) + '<br>';
+        for (const [k, v] of Object.entries(p)) {
+          if (k !== 'design') desc += k + ': ' + v + '<br>';
+        }
+        return desc;
       });
 
       const paretoTrace = {
@@ -836,7 +1169,7 @@
           size: 7,
           color: colorVals,
           colorscale: 'Viridis',
-          colorbar: { title: 'Hệ số An toàn F1', tickfont: { color: '#94a3b8' }, titlefont: { color: '#94a3b8' } },
+          colorbar: { title: actualCKey, tickfont: { color: '#94a3b8' }, titlefont: { color: '#94a3b8' } },
           opacity: 0.85,
         }
       };
@@ -860,8 +1193,8 @@
       const layout = {
         paper_bgcolor: 'transparent',
         plot_bgcolor: 'transparent',
-        xaxis: { title: 'Độ phóng đại dịch chuyển đầu ra F2 (µm)', color: '#94a3b8', gridcolor: '#33415533' },
-        yaxis: { title: 'Tần số cộng hưởng bậc 1 f (Hz)', color: '#94a3b8', gridcolor: '#33415533' },
+        xaxis: { title: actualXKey, color: '#94a3b8', gridcolor: '#33415533' },
+        yaxis: { title: actualYKey, color: '#94a3b8', gridcolor: '#33415533' },
         margin: { t: 20, r: 20, l: 60, b: 50 },
         legend: { font: { color: '#94a3b8' } }
       };
@@ -869,7 +1202,9 @@
       Plotly.newPlot('plotlyPareto', [paretoTrace, kneeTrace], layout, { responsive: true });
     }
 
-    // Step 4: Load Final Results
+    // =========================================================================
+    // STEP 4: LOAD FINAL RESULTS
+    // =========================================================================
     async function loadStep4Results() {
       if (!state.sessionId) return;
       showLoading('Đang tổng hợp thông số kết quả tối ưu...');
@@ -883,13 +1218,11 @@
           return;
         }
 
-        // Render Design Inputs
         const inBox = document.getElementById('designInputsList');
         inBox.innerHTML = Object.entries(data.recommended_design_inputs || {}).map(([k, v]) => {
           return '<div class="flex justify-between py-1.5"><span class="text-slate-400 font-mono">' + k + '</span><span class="font-bold text-sky-400 font-mono">' + (typeof v === 'number' ? v.toFixed(4) : v) + ' mm</span></div>';
         }).join('');
 
-        // Render Responses
         const outBox = document.getElementById('responsesList');
         outBox.innerHTML = Object.entries(data.predicted_mechanical_responses || {}).map(([k, v]) => {
           let unit = '';
@@ -900,7 +1233,6 @@
 
         document.getElementById('statTopsisScore').innerText = (data.topsis_score !== undefined ? data.topsis_score.toFixed(4) : '-');
 
-        // Set download URLs
         document.getElementById('btnDownloadPareto').href = '/api/wizard/download/pareto-csv?session_id=' + state.sessionId;
         document.getElementById('btnDownloadConfig').href = '/api/wizard/download/best-design-json?session_id=' + state.sessionId;
         document.getElementById('btnDownloadModel').href = '/api/wizard/download/model-pkl?session_id=' + state.sessionId;
@@ -910,7 +1242,6 @@
       }
     }
 
-    // Hook step 4 load
     const origGoToStep = goToStep;
     goToStep = function(stepNum) {
       origGoToStep(stepNum);
@@ -923,6 +1254,7 @@
       state.sessionId = null;
       state.unlockedStep = 1;
       updateSessionBadge(null);
+      resetDynamicUpload();
       goToStep(1);
       document.getElementById('btnToStep2').disabled = true;
       document.getElementById('btnToStep2').className = 'bg-slate-800 text-slate-500 font-semibold py-2 px-5 rounded-lg text-sm cursor-not-allowed transition';
@@ -933,7 +1265,6 @@
       showAlert('Đã khởi tạo phiên mới.');
     }
 
-    // Initialize on window load
     window.addEventListener('DOMContentLoaded', () => {
       loadTopologies();
     });

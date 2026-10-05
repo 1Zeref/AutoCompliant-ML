@@ -7,13 +7,21 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Literal
 import numpy as np
+import yaml
 import pandas as pd
 from pydantic import BaseModel, Field
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 
 from autocompliant.config.loader import load_topology_config
-from autocompliant.config.schema import TopologyConfig
+from autocompliant.config.schema import (
+    TopologyConfig,
+    InputParam,
+    OutputParam,
+    TopologyMeta,
+    SurrogateConfig,
+    OptimizationConfig,
+)
 from autocompliant.data.dataset import CompliantDataset
 from autocompliant.data.preprocessor import AdaptivePreprocessor
 from autocompliant.data.synthetic_generator import SyntheticCompliantGenerator
@@ -41,6 +49,32 @@ app = FastAPI(
 # ==============================================================================
 # 1. Pydantic Request & Response Schemas
 # ==============================================================================
+
+class ColumnMapping(BaseModel):
+    name: str = Field(..., description="Tên cột trong tệp dữ liệu")
+    role: Literal["input", "output", "ignore"] = Field(
+        default="input", description="Vai trò của cột ('input', 'output', hoặc 'ignore')"
+    )
+    objective: Optional[Literal["maximize", "minimize"]] = Field(
+        default="maximize", description="Hướng tối ưu nếu là output ('maximize' hoặc 'minimize')"
+    )
+    constraint_min: Optional[float] = Field(
+        default=None, description="Giá trị ràng buộc dưới (Y >= min)"
+    )
+    constraint_max: Optional[float] = Field(
+        default=None, description="Giá trị ràng buộc trên (Y <= max)"
+    )
+
+
+class DynamicConfigRequest(BaseModel):
+    session_id: str = Field(..., description="ID phiên làm việc hiện tại")
+    topology_name: Optional[str] = Field(
+        default="Custom_Dynamic_Topology", description="Tên cơ cấu tùy chọn"
+    )
+    columns: List[ColumnMapping] = Field(
+        ..., min_length=1, description="Danh sách các đối tượng ánh xạ vai trò cột"
+    )
+
 
 class Step2Request(BaseModel):
     session_id: str = Field(..., description="ID của phiên làm việc từ Bước 1")
@@ -270,6 +304,198 @@ async def wizard_step1_data(
             "output_targets": cfg.output_names,
             "preview_rows": preview_rows,
         },
+        "next_step_unlocked": 2,
+    }
+
+
+@app.post("/api/wizard/parse-columns")
+async def wizard_parse_columns(file: UploadFile = File(...)):
+    """Parse uploaded CSV dataset columns and return summary statistics for dynamic mapping."""
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="Vui lòng chọn tệp CSV hợp lệ.")
+
+    try:
+        content = await file.read()
+        if not content:
+            raise ValueError("Tệp tải lên rỗng không có nội dung.")
+        df = pd.read_csv(io.BytesIO(content))
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không thể đọc tệp CSV '{file.filename}': {str(e)}",
+        )
+
+    if df.empty or len(df.columns) == 0:
+        raise HTTPException(status_code=400, detail="Tệp CSV không chứa dữ liệu hoặc không có cột.")
+
+    # Create new session and persist raw dataset
+    session = SESSION_MANAGER.create_session()
+    session.raw_df = df
+    df.to_csv(session.base_dir / "dataset.csv", index=False)
+
+    columns_info = []
+    for col in df.columns:
+        is_num = bool(pd.api.types.is_numeric_dtype(df[col]))
+        min_val = None
+        max_val = None
+        if is_num:
+            valid_vals = df[col].dropna()
+            if len(valid_vals) > 0:
+                min_val = float(valid_vals.min())
+                max_val = float(valid_vals.max())
+        else:
+            try:
+                converted = pd.to_numeric(df[col], errors="coerce").dropna()
+                if len(converted) > 0:
+                    is_num = True
+                    min_val = float(converted.min())
+                    max_val = float(converted.max())
+            except Exception:
+                is_num = False
+
+        columns_info.append({
+            "name": str(col),
+            "is_numeric": is_num,
+            "min": min_val if min_val is not None else 0.0,
+            "max": max_val if max_val is not None else 1.0,
+        })
+
+    preview = df.head(5).to_dict(orient="records")
+    return {
+        "status": "success",
+        "session_id": session.session_id,
+        "total_rows": len(df),
+        "columns": columns_info,
+        "preview": preview,
+    }
+
+
+@app.post("/api/wizard/configure-topology")
+def wizard_configure_topology(req: DynamicConfigRequest):
+    """Dynamically configure TopologyConfig from user-selected column mappings and unlock Step 2."""
+    session = SESSION_MANAGER.get_session(req.session_id)
+    if session is None:
+        raise HTTPException(status_code=400, detail="Phiên làm việc không tồn tại.")
+
+    csv_path = session.base_dir / "dataset.csv"
+    if not csv_path.is_file():
+        raise HTTPException(status_code=400, detail="Không tìm thấy tệp dataset.csv của phiên làm việc.")
+
+    df = pd.read_csv(csv_path)
+
+    input_mappings = [c for c in req.columns if c.role == "input"]
+    output_mappings = [c for c in req.columns if c.role == "output"]
+
+    if len(input_mappings) < 1 or len(output_mappings) < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Cấu hình không hợp lệ: Bắt buộc phải có ít nhất 1 biến đầu vào (input) và ít nhất 1 biến đầu ra (output).",
+        )
+
+    # Validate that columns exist in dataset
+    for m in input_mappings + output_mappings:
+        if m.name not in df.columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cột '{m.name}' không tồn tại trong tệp dữ liệu đã tải lên.",
+            )
+
+    required_cols = [m.name for m in input_mappings + output_mappings]
+
+    # Check numeric types
+    for col in required_cols:
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            try:
+                df[col] = pd.to_numeric(df[col])
+            except Exception:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cột '{col}' chứa giá trị không phải số. Vui lòng kiểm tra lại dữ liệu.",
+                )
+
+    # Check for NaN / Null
+    if df[required_cols].isna().any().any():
+        raise HTTPException(
+            status_code=400,
+            detail="Dữ liệu các cột được chọn chứa giá trị rỗng (NaN/Null). Vui lòng làm sạch dữ liệu trước.",
+        )
+
+    # Build inputs
+    input_params: List[InputParam] = []
+    for m in input_mappings:
+        col_min = float(df[m.name].min())
+        col_max = float(df[m.name].max())
+        if col_min >= col_max:
+            col_max = col_min + 1e-4
+
+        input_params.append(
+            InputParam(
+                name=m.name,
+                symbol=m.name[:8],
+                min=col_min,
+                max=col_max,
+                unit="mm",
+                description=f"Dynamic design variable {m.name}",
+            )
+        )
+
+    # Build outputs
+    output_params: List[OutputParam] = []
+    for m in output_mappings:
+        output_params.append(
+            OutputParam(
+                name=m.name,
+                symbol=m.name[:8],
+                objective=m.objective or "maximize",
+                unit="a.u.",
+                constraint_min=m.constraint_min,
+                constraint_max=m.constraint_max,
+                description=f"Dynamic response target {m.name}",
+            )
+        )
+
+    topo_meta = TopologyMeta(
+        name=req.topology_name or "Custom_Dynamic_Topology",
+        description="User-defined dynamic topology generated via WebUI column mapper",
+    )
+
+    cfg = TopologyConfig(
+        topology=topo_meta,
+        inputs=input_params,
+        outputs=output_params,
+        surrogate=SurrogateConfig(),
+        optimization=OptimizationConfig(
+            algorithm="NSGA-II", pop_size=80, n_generations=50
+        ),
+    )
+
+    # Save topology.yaml in session directory
+    yaml_path = session.base_dir / "topology.yaml"
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        yaml.dump(cfg.model_dump(), f, sort_keys=False, allow_unicode=True)
+
+    session.config = cfg
+    session.config_path = str(yaml_path)
+    session.raw_df = df
+
+    # Instantiate CompliantDataset
+    dataset = CompliantDataset.from_dataframe(df, cfg, random_state=42)
+    session.dataset = dataset
+    session.current_step = 1
+    session.next_step_unlocked = 2
+
+    # Update legacy global session state
+    SESSION_STATE["config"] = cfg
+    SESSION_STATE["config_path"] = str(yaml_path)
+    SESSION_STATE["dataset"] = dataset
+
+    return {
+        "status": "success",
+        "session_id": session.session_id,
+        "D_in": cfg.D_in,
+        "D_out": cfg.D_out,
+        "input_features": cfg.input_names,
+        "output_targets": cfg.output_names,
         "next_step_unlocked": 2,
     }
 
