@@ -1,0 +1,54 @@
+# Cấu hình Topology: Cơ cấu thẳng góc Scott-Russell (Scott-Russell Compliant Mechanism)
+topology:
+  name: "Scott_Russell_Mechanism"
+  description: "Cơ cấu biến đổi hướng chuyển vị vi mô vuông góc Scott-Russell 4 thông số"
+
+inputs:
+  - name: "link_length_L"
+    symbol: "L"
+    min: 20.0
+    max: 60.0
+    unit: "mm"
+
+  - name: "hinge_thickness_t"
+    symbol: "t"
+    min: 0.4
+    max: 1.2
+    unit: "mm"
+
+  - name: "hinge_width_b"
+    symbol: "b"
+    min: 6.0
+    max: 12.0
+    unit: "mm"
+
+  - name: "fillet_radius_r"
+    symbol: "r"
+    min: 0.8
+    max: 2.0
+    unit: "mm"
+
+outputs:
+  - name: "safety_factor"
+    symbol: "F1"
+    objective: "maximize"
+    constraint_min: 1.8
+    unit: "ratio"
+
+  - name: "output_displacement"
+    symbol: "F2"
+    objective: "maximize"
+    unit: "um"
+
+surrogate:
+  test_size: 0.2
+  random_state: 42
+  cv_folds: 5
+  scaler: "minmax"
+
+optimization:
+  algorithm: "NSGA-II"
+  pop_size: 80
+  n_generations: 80
+  crossover_prob: 0.9
+  mutation_prob: 0.1

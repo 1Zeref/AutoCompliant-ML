@@ -1,0 +1,17 @@
+{
+  "best_index": 5,
+  "topsis_score": 0.849744443674678,
+  "recommended_design_inputs": {
+    "hinge_thickness_t": 0.33620057155000355,
+    "hinge_width_w": 14.983292306513256,
+    "arm_length_l": 34.659814871662405,
+    "bridge_angle_theta": 8.718471622089103,
+    "hinge_fillet_r": 2.3127438638315607
+  },
+  "predicted_mechanical_responses": {
+    "safety_factor": 1.5210223716847255,
+    "output_displacement": 63.48440977750708,
+    "resonant_frequency": 751.82959937227
+  },
+  "total_pareto_solutions": 9
+}

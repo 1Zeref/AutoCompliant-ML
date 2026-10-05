@@ -1,0 +1,73 @@
+# Cấu hình Topology: Cơ cấu khuếch đại vi dịch chuyển dạng cầu (Bridge-type Compliant Mechanism)
+topology:
+  name: "Bridge_Type_Amplifier"
+  description: "Cơ cấu khuếch đại vi dịch chuyển dạng cầu 5 thông số hình học bản lề mềm"
+
+inputs:
+  - name: "hinge_thickness_t"
+    symbol: "t"
+    min: 0.3
+    max: 1.5
+    unit: "mm"
+    description: "Chiều dày nhỏ nhất của bản lề mềm (Flexure hinge thickness)"
+
+  - name: "hinge_width_w"
+    symbol: "w"
+    min: 5.0
+    max: 15.0
+    unit: "mm"
+    description: "Bề rộng ngoài bản lề mềm (Flexure hinge width)"
+
+  - name: "arm_length_l"
+    symbol: "l"
+    min: 15.0
+    max: 40.0
+    unit: "mm"
+    description: "Chiều dài cánh tay đòn khuếch đại (Amplification arm length)"
+
+  - name: "bridge_angle_theta"
+    symbol: "theta"
+    min: 3.0
+    max: 12.0
+    unit: "deg"
+    description: "Góc nghiêng cánh tay đòn dạng cầu (Bridge inclination angle)"
+
+  - name: "hinge_fillet_r"
+    symbol: "r"
+    min: 0.5
+    max: 2.5
+    unit: "mm"
+    description: "Bán kính góc lượn tròn bản lề (Hinge fillet radius)"
+
+outputs:
+  - name: "safety_factor"
+    symbol: "F1"
+    objective: "maximize"
+    constraint_min: 1.5
+    unit: "ratio"
+    description: "Hệ số an toàn tĩnh (Static Safety Factor S = sigma_yield / sigma_vonMises)"
+
+  - name: "output_displacement"
+    symbol: "F2"
+    objective: "maximize"
+    unit: "um"
+    description: "Chuyển vị ngõ ra cực đại (Maximum Output Displacement)"
+
+  - name: "resonant_frequency"
+    symbol: "f"
+    objective: "maximize"
+    unit: "Hz"
+    description: "Tần số dao động riêng bậc 1 (First Resonant Natural Frequency)"
+
+surrogate:
+  test_size: 0.2
+  random_state: 42
+  cv_folds: 5
+  scaler: "standard"
+
+optimization:
+  algorithm: "NSGA-II"
+  pop_size: 100
+  n_generations: 100
+  crossover_prob: 0.9
+  mutation_prob: 0.1

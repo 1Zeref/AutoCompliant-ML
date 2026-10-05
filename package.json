@@ -1,0 +1,19 @@
+{
+  "name": "autocompliant-ml",
+  "version": "1.0.0",
+  "description": "AutoCompliant-ML with Loop Engineering & Antigravity",
+  "private": true,
+  "scripts": {
+    "loop:init": "npx @cobusgreyling/loop init . --pattern daily-triage",
+    "loop:doctor": "npx @cobusgreyling/loop doctor .",
+    "audit": "npx @cobusgreyling/loop-audit .",
+    "gate": "npx @cobusgreyling/loop-gate check --action commit --paths loop/LOOP.md,loop/STATE.md --gate-file loop/gate.yaml",
+    "gate:merge": "npx @cobusgreyling/loop-gate check --action auto-merge --gate-file loop/gate.yaml"
+  },
+  "devDependencies": {
+    "@cobusgreyling/loop": "latest",
+    "@cobusgreyling/loop-audit": "latest",
+    "@cobusgreyling/loop-gate": "latest",
+    "@cobusgreyling/loop-context": "latest"
+  }
+}
