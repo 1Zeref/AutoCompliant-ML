@@ -133,4 +133,18 @@ Nhật ký ghi lại chi tiết các chu kỳ chạy thực tế của AutoCompl
 - **Gate Verification Results**:
   1. `pytest tests/ -v`: **40/40 PASSED (100%)**
   2. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
-- **Status**: 🏁 **TOPSIS DEGENERACY & CUSTOM BOUNDS FULLY OPERATIONAL & VERIFIED.**
+- **Status**: PASSED
+
+### [2026-10-06 08:20:00] Cycle #012 - Production Containerization & Docker Architecture
+- **Actions Completed**:
+  - Chuẩn hóa toàn diện [requirements.txt](file:///d:/CODE/AutoCompliant-ML/requirements.txt) với đầy đủ thư viện Machine Learning, Surrogate Models, Pymoo và FastAPI WebUI.
+  - Thiết lập [Dockerfile](file:///d:/CODE/AutoCompliant-ML/Dockerfile) môi trường lai (Python 3.11 + Node.js 18 + C/C++ runtime OpenMP `libgomp1`), expose cổng `8000` chạy trực tiếp `web_app.py`.
+  - Thiết lập [docker-compose.yml](file:///d:/CODE/AutoCompliant-ML/docker-compose.yml) tách biệt 3 services:
+    - `web`: Dịch vụ máy chủ FastAPI Guided Stepper Wizard (Port 8000:8000, volume mounts `artifacts/`, `reports/`, `models/artifacts/`, `configs/`).
+    - `optimizer`: Tác vụ ngầm tối ưu hóa NSGA-II + TOPSIS (`run_optimization.py`, profile `jobs`).
+    - `benchmark`: Tác vụ ngầm so chuẩn mô hình surrogate Model Zoo (`run_benchmark.py`, profile `jobs`).
+  - Thiết lập [.dockerignore](file:///d:/CODE/AutoCompliant-ML/.dockerignore) loại bỏ triệt để file rác, `.venv/`, `.git/`, `node_modules/`, session tạm.
+- **Gate Verification Results**:
+  1. `pytest tests/ -v`: **40/40 PASSED (100%)**
+  2. `tools\loop-gate.cmd check`: **ALLOWED [ok]** (Exit code 0).
+- **Status**: 🏁 **DOCKER CONTAINERIZATION FULLY CONFIGURED & VERIFIED.**

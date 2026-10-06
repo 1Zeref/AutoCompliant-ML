@@ -92,6 +92,17 @@
      - Ngưỡng phân loại $z \le 1.5$ (Cao), $1.5 < z \le 2.0$ (Trung bình), $z > 2.0$ (Độ tin cậy thấp / Rủi ro ngoại suy cao).
 - **Gate 10**: `pytest tests/ -v` $\rightarrow$ **40/40 PASSED (100%)**.
 
+### ✅ Loop 11: Production Containerization & Docker Architecture (Cycle #012) - COMPLETED
+- Triển khai toàn bộ giải pháp Docker hóa cho toàn bộ hệ thống AutoCompliant-ML:
+  1. **Tệp `requirements.txt` cập nhật đầy đủ**: Bổ sung các thư viện ML (`xgboost`, `lightgbm`, `torch`), tối ưu hóa đa mục tiêu (`pymoo`), và web dashboard (`fastapi`, `uvicorn`, `python-multipart`, `jinja2`).
+  2. **Tệp `Dockerfile` đa môi trường (Hybrid Environment)**: Sử dụng base image `python:3.11-slim`, cài đặt thư viện hệ thống C/C++ runtime (`libgomp1`, `build-essential`), tích hợp Node.js 18 LTS cho các công cụ audit/loop-gate, và chạy trực tiếp Web Dashboard trên port 8000.
+  3. **Tệp `docker-compose.yml` phân chia microservices & batch jobs**:
+     - `web`: Dịch vụ máy chủ FastAPI Stepper Wizard (`ports: 8000:8000`, volume mounts: `artifacts/`, `reports/`, `models/artifacts/`, `configs/`).
+     - `optimizer`: Tác vụ ngầm tối ưu hóa NSGA-II + TOPSIS (`run_optimization.py`, profile `jobs`).
+     - `benchmark`: Tác vụ ngầm so chuẩn mô hình surrogate Model Zoo (`run_benchmark.py`, profile `jobs`).
+  4. **Tệp `.dockerignore` tinh gọn**: Loại bỏ triệt để file rác, virtual environment `.venv/`, `.git/`, `node_modules/`, và các file session tạm.
+- **Gate 11**: `pytest tests/ -v` $\rightarrow$ **40/40 PASSED (100%)**, `loop-gate check` $\rightarrow$ **ALLOWED [ok]**.
+
 ---
 
 ## Cumulative Verification Status

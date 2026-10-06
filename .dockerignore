@@ -1,0 +1,32 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing & code quality
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Git & Antigravity IDE
+.git/
+.gitignore
+.gemini/
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Transient session data & temporary files
+artifacts/sessions/*
+!artifacts/sessions/.gitkeep
+tmp/
+*.log
